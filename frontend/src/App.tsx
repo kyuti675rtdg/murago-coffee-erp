@@ -1,9 +1,10 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Bell, ChevronDown, ChevronRight, Coffee, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen,
+  Bell, ChevronDown, ChevronRight, Coffee, Eye, EyeOff, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen,
   Search, Sun, Wifi, WifiOff, X,
 } from 'lucide-react'
+import muragoSign from './assets/murago-sign.jpg'
 import { api, post } from './api'
 import { NAV, LEAF_BY_ID, canSee, type Leaf } from './nav'
 import { ToastCtx, PageHeader, errMsg, toastEl, useList } from './ui'
@@ -36,27 +37,71 @@ function pageComponent(leaf: Leaf): React.LazyExoticComponent<any> {
 function Login() {
   const { login } = useAuth(); const { theme, toggle } = useTheme(); const t = useT()
   const [u, setU] = useState('admin'); const [p, setP] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false)
+  const [showPw, setShowPw] = useState(false)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(''); setBusy(true)
     try { await login(u, p) } catch (x: any) { setErr(errMsg(x)) } finally { setBusy(false) }
   }
-  return (<div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg)' }}>
-    <div className="absolute top-4 right-4 flex items-center gap-2"><LangSwitch /><button className="btn-ghost !px-2.5" onClick={toggle} aria-label="Toggle theme">{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div>
-    <form onSubmit={submit} className="card w-full max-w-sm !p-6" style={{ boxShadow: 'var(--shadow-lg)' }}>
-      <div className="flex items-center gap-3 mb-1">
-        <span className="inline-flex items-center justify-center w-11 h-11 rounded-xl" style={{ background: 'var(--btn-bg)', color: 'var(--btn-text)' }}><Coffee size={22} /></span>
-        <div><h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Murago Coffee ERP</h1>
-          <p className="text-xs" style={{ color: 'var(--muted)' }}>{t('Bean Power ERP — farm to export', 'Bean Power ERP — ከእርሻ እስከ ኤክስፖርት')}</p></div>
+  const stats: [string, string][] = [
+    [t('Washing stations', 'የማጠቢያ ጣቢያዎች'), 'MUR · BEN'],
+    [t('Altitude', 'ቁመት'), '1,950 m'],
+    [t('Process', 'ዘዴ'), t('Washed · Natural', 'የታጠበ · ተፈጥሮ')],
+  ]
+  return (<div className="min-h-screen flex flex-col lg:flex-row" style={{ background: 'var(--bg)' }}>
+    {/* ——— Brand panel: the Murago road sign photo ——— */}
+    <div className="relative lg:w-[54%] h-64 sm:h-72 lg:h-auto shrink-0 overflow-hidden">
+      <img src={muragoSign} alt={t('The Murago road sign, Sidama', 'የሙራጎ የመንገድ ምልክት፣ ሲዳማ')} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: '50% 38%' }} />
+      <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(12,8,4,0.18) 0%, rgba(12,8,4,0.05) 38%, rgba(12,8,4,0.78) 100%)' }} />
+      <div className="absolute top-4 left-4 flex items-center gap-2">
+        <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl shadow-lg" style={{ background: '#d97706', color: '#fff' }}><Coffee size={20} /></span>
+        <div className="leading-tight">
+          <div className="font-extrabold tracking-[0.22em] text-white text-lg" style={{ textShadow: '0 1px 8px rgba(0,0,0,0.55)' }}>MURAGO</div>
+          <div className="text-[11px] text-white/85" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>{t('Bean Power Coffee', 'Bean Power ቡና')}</div>
+        </div>
       </div>
-      <p className="text-sm mt-3 mb-4" style={{ color: 'var(--muted)' }}>{t('Sign in with your station account. Access is role-based and station-scoped.', 'በጣቢያዎ መለያ ይግቡ። መዳረሻ በሚና እና በጣቢያ ወሰን ይወሰናል።')}</p>
-      {err && <div className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>{err}</div>}
-      <label className="block"><span className="lbl">{t('Username', 'የተጠቃሚ ስም')}</span>
-        <input className="inp" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" /></label>
-      <label className="block mt-3"><span className="lbl">{t('Password', 'የይለፍ ቃል')}</span>
-        <input className="inp" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></label>
-      <button className="btn w-full justify-center mt-5" disabled={busy}>{busy ? t('Signing in…', 'በመግባት ላይ…') : t('Sign in', 'ግባ')}</button>
-      <p className="text-[11px] mt-3" style={{ color: 'var(--muted)' }}>{t('Demo credentials are documented in the production readiness report (demo only — rotate before real use).', 'የሙከራ መለያዎች በዝግጁነት ሪፖርቱ ውስጥ ተመዝግበዋል (ለሙከራ ብቻ — ለእውነተኛ አገልግሎት ይቀይሩ)።')}</p>
-    </form>
+      <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7 hidden sm:block">
+        <p className="text-white font-semibold text-xl sm:text-2xl leading-snug max-w-md" style={{ textShadow: '0 2px 10px rgba(0,0,0,0.6)' }}>
+          {t('From Sidama’s highlands to the world — every cherry, every lot, one system.', 'ከሲዳማ ቡና ምድር ወደ ዓለም — እያንዳንዱ ቼሪ፣ እያንዳንዱ ሎት፣ በአንድ ሲስተም።')}
+        </p>
+        <p className="text-white/80 text-xs sm:text-sm mt-2" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>
+          {t('Murago Washing Station · Aleta Wondo · Sidama, Ethiopia', 'የሙራጎ ማጠቢያ ጣቢያ · አሌታ ወንዶ · ሲዳማ፣ ኢትዮጵያ')}
+        </p>
+        <div className="flex flex-wrap gap-2 mt-4">
+          {stats.map(([l, v]) => (
+            <span key={l} className="rounded-full px-3 py-1.5 text-[11px] sm:text-xs text-white" style={{ background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.28)' }}>
+              {l}: <b>{v}</b></span>))}
+        </div>
+      </div>
+    </div>
+
+    {/* ——— Sign-in panel ——— */}
+    <div className="flex-1 flex flex-col relative">
+      <div className="absolute top-4 right-4 flex items-center gap-2 z-10"><LangSwitch /><button className="btn-ghost !px-2.5" onClick={toggle} aria-label="Toggle theme">{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div>
+      <div className="flex-1 flex items-center justify-center p-5 sm:p-8">
+        <form onSubmit={submit} className="w-full max-w-sm">
+          <span className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-4 lg:hidden" style={{ background: 'var(--btn-bg)', color: 'var(--btn-text)' }}><Coffee size={24} /></span>
+          <h1 className="text-2xl sm:text-[28px] font-bold leading-tight" style={{ color: 'var(--text)' }}>{t('Welcome back', 'እንኳን ደህና መጣህ')}</h1>
+          <p className="text-sm mt-1.5 mb-6" style={{ color: 'var(--muted)' }}>
+            {t('Sign in to Murago Coffee ERP — the Bean Power operations platform. Access is role-based and station-scoped.', 'ወደ ሙራጎ የቡና ERP ይግቡ — የBean Power የሥራ መድረክ። መዳረሻ የሚና-ተኮር እና በጣቢያ የተወሰነ ነው።')}
+          </p>
+          {err && <div className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>{err}</div>}
+          <label className="block"><span className="lbl">{t('Username', 'የተጠቃሚ ስም')}</span>
+            <input className="inp !py-2.5" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" placeholder="admin" /></label>
+          <label className="block mt-3"><span className="lbl">{t('Password', 'የይለፍ ቃል')}</span>
+            <span className="relative block">
+              <input className="inp !py-2.5 !pr-10" type={showPw ? 'text' : 'password'} value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" placeholder="••••••••" />
+              <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 p-1" style={{ color: 'var(--muted)' }}
+                onClick={() => setShowPw(!showPw)} aria-label={showPw ? t('Hide password', 'የይለፍ ቃል ደብቅ') : t('Show password', 'የይለፍ ቃል አሳይ')}>
+                {showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+            </span></label>
+          <button className="btn w-full justify-center mt-6 !py-3 text-[15px] font-semibold" disabled={busy}>{busy ? t('Signing in…', 'በመግባት ላይ…') : t('Sign in', 'ግባ')}</button>
+          <p className="text-[11px] mt-4 leading-relaxed" style={{ color: 'var(--muted)' }}>{t('Demo credentials are documented in the production readiness report (demo only — rotate before real use).', 'የሙከራ መለያዎች በዝግጁነት ሪፖርቱ ውስጥ ተመዝግበዋል (ለሙከራ ብቻ — ለእውነተኛ አገልግሎት ይቀይሩ)።')}</p>
+        </form>
+      </div>
+      <p className="text-center text-[11px] pb-5 px-4" style={{ color: 'var(--muted)' }}>
+        Murago Coffee Processing PLC · {t('Enterprise system by', 'የኢንተርፕራይዝ ሲስተም በ')} Orbit Technology Solution PLC
+      </p>
+    </div>
   </div>)
 }
 
