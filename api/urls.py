@@ -12,6 +12,7 @@ urlpatterns = [
     path("auth/logout/", auth_views.logout),
     path("auth/me/", auth_views.me),
     path("users/", auth_views.users_list),
+    path("admin/provision-staff/", auth_views.provision_staff),
     path("dashboard/", views.dashboard),
     path("site-performance/", views.site_performance),
     path("site-performance/<uuid:station_id>/", views.site_performance_detail),

@@ -59,3 +59,51 @@ def me(request):
 def users_list(request):
     """Minimal user directory for sign-off / assignment selects (id + username only)."""
     return Response([{"id": u.id, "username": u.username} for u in User.objects.filter(is_active=True).order_by("username")])
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def provision_staff(request):
+    """Superuser-only staff provisioning.
+
+    Creates NEW accounts with per-account passwords and signature PINs plus
+    a role/station assignment. An existing username is never modified —
+    passwords are never overwritten — so re-running a batch is safe.
+    Optionally deactivates listed non-superuser accounts (used to retire
+    shared-password demo logins). Passwords/PINs are accepted over HTTPS
+    only and are never echoed back in the response.
+    """
+    if not request.user.is_superuser:
+        return Response({"detail": "Superuser required."}, status=status.HTTP_403_FORBIDDEN)
+    from core.models import Role, SignatureCredential, Station
+
+    stations = {s.code: s for s in Station.objects.all()}
+    roles = {r.code: r for r in Role.objects.all()}
+    created, skipped, deactivated = [], [], []
+    for spec in request.data.get("accounts", []):
+        username = (spec.get("username") or "").strip()
+        role = roles.get(spec.get("role") or "")
+        if not username or role is None or not spec.get("password"):
+            skipped.append({"username": username, "reason": "missing username/password or unknown role"})
+            continue
+        if User.objects.filter(username=username).exists():
+            skipped.append({"username": username, "reason": "already exists — untouched"})
+            continue
+        station = stations.get(spec.get("station") or "") if spec.get("station") else None
+        user = User.objects.create_user(
+            username=username, email=f"{username}@murago.local", password=spec["password"],
+            first_name=spec.get("first_name", ""), last_name=spec.get("last_name", ""))
+        UserStationRole.objects.get_or_create(user=user, role=role, station=station)
+        cred, _ = SignatureCredential.objects.get_or_create(user=user, defaults={"pin_hash": ""})
+        if spec.get("pin"):
+            cred.set_pin(str(spec["pin"]))
+            cred.save()
+        Token.objects.get_or_create(user=user)
+        created.append(username)
+    for username in request.data.get("deactivate", []):
+        user = User.objects.filter(username=username).exclude(is_superuser=True).first()
+        if user and user.is_active:
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+            deactivated.append(username)
+    return Response({"created": created, "skipped": skipped, "deactivated": deactivated})
