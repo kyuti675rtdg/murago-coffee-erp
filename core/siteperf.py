@@ -63,8 +63,14 @@ def station_metrics(station, date_from=None, date_to=None):
 
     lots = Lot.objects.filter(station=station)
     lot_agg = lots.aggregate(cherry=Sum("cherry_kg"), parch=Sum("parchment_kg"), n=Count("id"))
-    cherry_in = _d(lot_agg["cherry"]); parch = _d(lot_agg["parch"])
+    # Yield = conversion of lots that have actually been processed to
+    # parchment (lots still in early stages have no parchment recorded yet
+    # and would otherwise drag the figure to a meaningless low).
+    processed = lots.filter(parchment_kg__gt=0).aggregate(
+        cherry=Sum("cherry_kg"), parch=Sum("parchment_kg"))
+    cherry_in = _d(processed["cherry"]); parch = _d(processed["parch"])
     yield_pct = (parch / cherry_in * 100).quantize(Decimal("0.1")) if cherry_in and parch else None
+    cherry_total = _d(lot_agg["cherry"])
 
     scores = [cs.total_score for cs in CuppingScore.objects.filter(lot__station=station)]
     avg_quality = (sum(scores) / len(scores)).quantize(Decimal("0.01")) if scores else None
@@ -132,7 +138,7 @@ def station_metrics(station, date_from=None, date_to=None):
         "intakes": agg["n"] or 0,
         "collected_kg": str(collected), "procurement_cost_etb": str(cost),
         "avg_price_per_kg": str(avg_price),
-        "lots": lot_agg["n"] or 0, "cherry_in_kg": str(cherry_in), "parchment_kg": str(parch),
+        "lots": lot_agg["n"] or 0, "cherry_in_kg": str(cherry_total), "parchment_kg": str(parch),
         "yield_pct": str(yield_pct) if yield_pct is not None else None,
         "avg_quality": str(avg_quality) if avg_quality is not None else None,
         "cuppings": len(scores),

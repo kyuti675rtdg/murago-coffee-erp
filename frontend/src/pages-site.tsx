@@ -132,7 +132,7 @@ export function SiteProfile({ stationId, onBack }: { stationId: string; onBack: 
     </Section>)}
     {tab === 'production' && (<Section title={t('Recent lots & conversion', 'የቅርብ ሎቶች እና ልወጣ')}>
       <T rows={d.recent_lots ?? []} cols={[['lot_code', t('Lot', 'ሎት')], ['process_type', t('Process', 'ዘዴ')], ['current_stage', t('Stage', 'ደረጃ')], ['cherry_kg', t('Cherry kg', 'የቼሪ ኪ.ግ')], ['parchment_kg', t('Parchment kg', 'የበቆሎ ኪ.ግ')], ['current_weight_kg', t('Current kg', 'የአሁን ኪ.ግ')]]} />
-      <p className="text-sm mt-2">{t('Yield', 'ውጤት')}: <b>{d.yield_pct ? `${d.yield_pct}%` : '—'}</b> ({kg(d.cherry_in_kg)} → {kg(d.parchment_kg)})</p>
+      <p className="text-sm mt-2">{t('Yield (processed lots)', 'ውጤት (የተዘጋጁ ሎቶች)')}: <b>{d.yield_pct ? `${d.yield_pct}%` : '—'}</b> · {t('Parchment produced', 'የተመረተ በቆሎ')}: <b>{kg(d.parchment_kg)}</b></p>
     </Section>)}
     {tab === 'quality' && (<Section title={t('Quality summary', 'የጥራት ማጠቃለያ')}>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
