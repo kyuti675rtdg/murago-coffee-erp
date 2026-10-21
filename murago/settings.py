@@ -21,7 +21,14 @@ def _gis_available() -> bool:
         return False
     if pref in ("1", "true", "yes"):
         return True
-    return bool(find_library("gdal") or find_library("GDAL")) and bool(find_library("geos_c"))
+    # Prefer Django's own GDAL/GEOS detection (it searches more library paths
+    # than a bare find_library — the first Render deploy proved the difference).
+    try:
+        from django.contrib.gis.gdal import HAS_GDAL
+        from django.contrib.gis.geos import HAS_GEOS
+        return bool(HAS_GDAL and HAS_GEOS)
+    except Exception:
+        return bool(find_library("gdal") or find_library("GDAL")) and bool(find_library("geos_c"))
 
 GIS_AVAILABLE = _gis_available()
 

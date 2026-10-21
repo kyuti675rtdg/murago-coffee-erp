@@ -11,11 +11,15 @@ from django.db import models
 
 from core.base import TimeStampedUUIDModel
 
-try:  # Production path: real GeoDjango geometry fields.
-    from django.contrib.gis.db.models import PointField, PolygonField
-    GIS_AVAILABLE = True
-except Exception:  # GDAL/GEOS native libs missing locally.
-    GIS_AVAILABLE = False
+# Single source of truth: settings.GIS_AVAILABLE (deploy fix 2026-10-21 — the
+# model must never disagree with the DB engine about GIS; a mismatch crashed
+# the first Render seed when this import succeeded but the engine was non-GIS).
+GIS_AVAILABLE = bool(getattr(settings, "GIS_AVAILABLE", False))
+if GIS_AVAILABLE:
+    try:
+        from django.contrib.gis.db.models import PointField, PolygonField
+    except Exception:
+        GIS_AVAILABLE = False
 
 
 class Farmer(TimeStampedUUIDModel):
