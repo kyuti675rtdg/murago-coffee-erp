@@ -13,6 +13,8 @@ urlpatterns = [
     path("auth/me/", auth_views.me),
     path("users/", auth_views.users_list),
     path("admin/provision-staff/", auth_views.provision_staff),
+    path("admin/permission-matrix/", auth_views.permission_matrix),
+    path("admin/permission-matrix/<str:role_code>/", auth_views.permission_matrix_update),
     path("dashboard/", views.dashboard),
     path("site-performance/", views.site_performance),
     path("site-performance/<uuid:station_id>/", views.site_performance_detail),

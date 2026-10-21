@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from core.models import UserStationRole
-from .permissions import user_role_codes, user_station_ids
+from .permissions import is_admin, user_role_codes, user_station_ids
 
 User = get_user_model()
 
@@ -123,3 +123,85 @@ def provision_staff(request):
             user.save(update_fields=["is_active"])
             deactivated.append(username)
     return Response({"created": created, "skipped": skipped, "deactivated": deactivated, "reset": reset})
+
+
+# ------------------------------------------------- role & permission matrix
+MATRIX_APPS = [
+    ("core", "Stations, Equipment & Cameras"), ("farmers", "Farmers & Bonus"),
+    ("collection", "Collection & Intake"), ("procurement", "Procurement"),
+    ("processing", "Processing"), ("drymill", "Dry Mill"),
+    ("traceability", "Traceability"), ("quality", "Quality"),
+    ("warehouse", "Warehouse & Stores"), ("resources", "Resources (Fuel & Water)"),
+    ("hr", "HR & Workers"), ("payroll", "Payroll"), ("buyers", "Buyers & Contracts"),
+    ("exports", "Exports"), ("logistics", "Logistics"), ("finance", "Finance & GL"),
+    ("payments", "Payments"), ("inventory", "Inventory"), ("bi", "BI Reports"),
+    ("sync", "Sync"), ("sysconf", "System Reference Data"),
+]
+MATRIX_LOCKED = [
+    "Admin always has full access and its grants cannot be edited.",
+    "Roles, user-role assignments, signature credentials (PINs), the organization record, the audit log and alert thresholds are ADMIN-ONLY and never follow this matrix.",
+    "Bonus schemes & tiers: writes always stay with the Finance Manager (reads follow the Farmers row).",
+    "Report definitions: writes always stay with the Finance Manager.",
+    "Station scope is separate: a grant gives module access; the user's station assignment decides which site's rows they see.",
+]
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def permission_matrix(request):
+    """Admin-only: the effective role x module grant matrix for the
+    Roles & Permissions settings page."""
+    if not is_admin(request.user):
+        return Response({"detail": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    from core.models import Role
+    from .permissions import default_grants_for, role_grants
+    roles = []
+    for role in Role.objects.all().order_by("code"):
+        roles.append({
+            "code": role.code, "label": role.get_code_display(),
+            "description": role.description or "",
+            "user_count": UserStationRole.objects.filter(role=role, user__is_active=True).count(),
+            "grants": role_grants(role),
+            "defaults": default_grants_for(role.code),
+            "customized": isinstance(role.permissions, dict) and bool(role.permissions),
+        })
+    return Response({"apps": [{"app": a, "label": l} for a, l in MATRIX_APPS],
+                     "roles": roles, "locked": MATRIX_LOCKED})
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def permission_matrix_update(request, role_code):
+    """Admin-only: replace one role's module grants. Takes effect
+    immediately (the permission layer reads the saved map per request)."""
+    if not is_admin(request.user):
+        return Response({"detail": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    from core.models import AuditLog, Role
+    from .permissions import role_grants
+    if role_code == "admin":
+        return Response({"detail": "The admin role always has full access and cannot be edited."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    role = Role.objects.filter(code=role_code).first()
+    if role is None:
+        return Response({"detail": "Unknown role: " + role_code}, status=status.HTTP_404_NOT_FOUND)
+    raw = request.data.get("grants")
+    if not isinstance(raw, dict):
+        return Response({"detail": "Body must carry a grants object: {app: [read, write]}."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    valid_apps = {a for a, _l in MATRIX_APPS}
+    grants = {}
+    for app, actions in raw.items():
+        if app not in valid_apps:
+            return Response({"detail": "Unknown module: " + app}, status=status.HTTP_400_BAD_REQUEST)
+        acts = sorted({a for a in (actions or []) if a in ("read", "write")})
+        if acts:
+            grants[app] = acts
+    role.permissions = grants
+    role.save(update_fields=["permissions"])
+    try:
+        AuditLog.objects.create(actor=request.user, action="permission_matrix_update",
+                                model_label="core.role", object_id=str(role.pk),
+                                after={"role": role_code, "grants": grants})
+    except Exception:
+        pass
+    return Response({"code": role.code, "grants": role_grants(role), "customized": True})

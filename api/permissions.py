@@ -166,8 +166,57 @@ def is_admin(user):
     return bool(user and user.is_authenticated and (user.is_superuser or "admin" in user_role_codes(user)))
 
 
+def default_grants_for(role_code):
+    """Effective app grants from the built-in matrices: {app: [actions]}.
+
+    These are the factory defaults. An admin can replace a role's grants
+    from the Roles & Permissions settings page; the saved map is stored on
+    the Role row (``permissions``) and then takes precedence.
+    """
+    grants = {}
+    for app, roles_ in READ_MATRIX.items():
+        if role_code in roles_:
+            grants.setdefault(app, []).append("read")
+    for app, roles_ in WRITE_MATRIX.items():
+        if role_code in roles_:
+            grants.setdefault(app, [])
+            if "write" not in grants[app]:
+                grants[app].append("write")
+    return grants
+
+
+def role_grants(role):
+    """A role's grants: the admin-saved map when present, else the defaults.
+    (Seed-era codename lists in `permissions` are display metadata, not a
+    grant map — only a dict counts.)"""
+    perms = getattr(role, "permissions", None)
+    if isinstance(perms, dict) and perms:
+        return {app: list(actions) for app, actions in perms.items()}
+    return default_grants_for(role.code)
+
+
+def _user_grants(user):
+    """Merged (read_apps, write_apps) across the user's roles, request-cached."""
+    cached = getattr(user, "_grants_cache", None)
+    if cached is not None:
+        return cached
+    reads, writes = set(), set()
+    for usr in UserStationRole.objects.filter(user=user).select_related("role"):
+        for app, actions in role_grants(usr.role).items():
+            if "read" in actions:
+                reads.add(app)
+            if "write" in actions:
+                writes.add(app)
+    user._grants_cache = (reads, writes)
+    return reads, writes
+
+
 def _allowed(user, model, write):
-    """Single source of truth: may `user` read (write=False) or write this model?"""
+    """Single source of truth: may `user` read (write=False) or write this model?
+
+    Order: admin → per-model overrides (identity records stay admin-only no
+    matter what the editable grant map says) → the role's grant map.
+    """
     if not user or not user.is_authenticated:
         return False
     roles = user_role_codes(user)
@@ -178,8 +227,8 @@ def _allowed(user, model, write):
     kind = "write" if write else "read"
     if kind in override:
         return bool(roles & override[kind])
-    matrix = WRITE_MATRIX if write else READ_MATRIX
-    return bool(roles & matrix.get(app, set()))
+    reads, writes = _user_grants(user)
+    return app in (writes if write else reads)
 
 
 def can_read(user, model):

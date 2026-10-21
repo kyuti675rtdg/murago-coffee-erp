@@ -199,3 +199,95 @@ export function BackupsPage() {
     <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>Backups run on the server (Render shell / cron), never from the browser — this page is a read-only inventory of the backups directory.</p>
   </Section>)
 }
+
+
+export function RolesPermissions() {
+  const toast = useToast(); const qc = useQueryClient()
+  const matrix = useQuery({ queryKey: ['permission-matrix'], queryFn: () => api('/admin/permission-matrix/') })
+  const [edits, setEdits] = useState<Record<string, Record<string, string[]>>>({})
+  const [saving, setSaving] = useState('')
+  const roles: any[] = matrix.data?.roles ?? []
+  const apps: any[] = matrix.data?.apps ?? []
+  const grantsOf = (role: any) => edits[role.code] ?? role.grants ?? {}
+  const cycle = (role: any, app: string) => {
+    const cur = grantsOf(role)[app] ?? []
+    const next = cur.length === 0 ? ['read'] : cur.includes('write') ? [] : ['read', 'write']
+    setEdits((e) => ({ ...e, [role.code]: { ...grantsOf(role), [app]: next } }))
+  }
+  const save = async (role: any, grants: Record<string, string[]>) => {
+    setSaving(role.code)
+    try {
+      await api(`/admin/permission-matrix/${role.code}/`, { method: 'PUT', body: JSON.stringify({ grants }) })
+      toast(`Permissions saved for ${role.label} — in effect immediately`)
+      setEdits((e) => { const n = { ...e }; delete n[role.code]; return n })
+      qc.invalidateQueries({ queryKey: ['permission-matrix'] })
+    } catch (err: any) { toast(`Save failed: ${errMsg(err)}`, false) } finally { setSaving('') }
+  }
+  const cellStyle = (acts: string[]): React.CSSProperties => acts.includes('write')
+    ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }
+    : acts.includes('read')
+      ? { background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' }
+      : { background: 'transparent', color: 'var(--muted)', border: '1px dashed var(--border)' }
+  return (<div>
+    <Section title="Roles & Permissions — module access matrix" sub="Click a cell to cycle access: – none → R read → RW read + write. Changes take effect immediately for every user with that role. Station scope is assigned per user (Users page) and always applies on top of these grants.">
+      {matrix.isLoading && <p className="text-sm" style={{ color: 'var(--muted)' }}>Loading matrix…</p>}
+      {matrix.isError && <p className="text-sm" style={{ color: 'var(--danger, #b91c1c)' }}>Could not load the matrix: {errMsg(matrix.error)}</p>}
+      {matrix.data && (<div className="overflow-x-auto">
+        <table className="text-xs w-full" style={{ borderCollapse: 'separate', borderSpacing: 2 }}>
+          <thead><tr>
+            <th className="text-left p-2 sticky left-0" style={{ background: 'var(--card)', minWidth: 170 }}>Module</th>
+            {roles.map((r: any) => (<th key={r.code} className="p-2 text-center" style={{ minWidth: 86 }}>
+              <div className="font-semibold" style={{ color: 'var(--text)' }}>{r.label}</div>
+              <div style={{ color: 'var(--muted)' }}>{r.user_count} user{r.user_count === 1 ? '' : 's'}{r.customized ? ' · custom' : ''}</div>
+            </th>))}
+          </tr></thead>
+          <tbody>
+            {apps.map((a: any) => (<tr key={a.app}>
+              <td className="p-2 font-medium sticky left-0" style={{ background: 'var(--card)', color: 'var(--text)' }}>{a.label}</td>
+              {roles.map((r: any) => {
+                const acts = grantsOf(r)[a.app] ?? []
+                const lockedRole = r.code === 'admin'
+                return (<td key={r.code} className="text-center">
+                  <button type="button" disabled={lockedRole} title={lockedRole ? 'Admin always has full access' : `${r.label} — ${a.label}: click to change`}
+                    onClick={() => cycle(r, a.app)}
+                    className="rounded-md px-2 py-1 font-bold w-12"
+                    style={lockedRole ? { background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' } : cellStyle(acts)}>
+                    {lockedRole ? 'RW' : acts.includes('write') ? 'RW' : acts.includes('read') ? 'R' : '–'}
+                  </button>
+                </td>)
+              })}
+            </tr>))}
+          </tbody>
+        </table>
+      </div>)}
+      {Object.keys(edits).length > 0 && (<div className="flex flex-wrap gap-2 mt-3 items-center">
+        <span className="text-xs font-semibold" style={{ color: 'var(--warning, #b45309)' }}>Unsaved changes:</span>
+        {roles.filter((r: any) => edits[r.code]).map((r: any) => (
+          <span key={r.code} className="flex gap-1 items-center">
+            <button className="btn !py-1 !px-2 text-xs" disabled={saving === r.code} onClick={() => save(r, grantsOf(r))}>
+              {saving === r.code ? 'Saving…' : `Save ${r.label}`}</button>
+            <button className="btn-ghost !py-1 !px-2 text-xs" onClick={() => setEdits((e) => { const n = { ...e }; delete n[r.code]; return n })}>Discard</button>
+          </span>))}
+      </div>)}
+    </Section>
+    <Section title="Role directory & hard locks" sub="Who holds each role is managed on the Users, Roles & Signatures page. The rules below are enforced in code and cannot be changed from this matrix.">
+      <div className="grid gap-2 md:grid-cols-2">
+        {roles.map((r: any) => (<div key={r.code} className="rounded-lg p-3" style={{ border: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between gap-2">
+            <b className="text-sm" style={{ color: 'var(--text)' }}>{r.label}</b>
+            <span className="flex gap-1 items-center">
+              {r.customized && <Badge value="customized" />}
+              <Badge value={`${r.user_count} users`} />
+              {r.customized && <button className="btn-ghost !py-0.5 !px-2 text-[11px]" disabled={saving === r.code}
+                onClick={() => save(r, r.defaults)}>Reset to defaults</button>}
+            </span>
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>{r.description || '—'}</p>
+        </div>))}
+      </div>
+      <ul className="list-disc pl-5 mt-3 text-xs space-y-1" style={{ color: 'var(--muted)' }}>
+        {(matrix.data?.locked ?? []).map((note: string, i: number) => <li key={i}>{note}</li>)}
+      </ul>
+    </Section>
+  </div>)
+}
