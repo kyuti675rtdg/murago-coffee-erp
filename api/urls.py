@@ -13,6 +13,8 @@ urlpatterns = [
     path("auth/me/", auth_views.me),
     path("users/", auth_views.users_list),
     path("dashboard/", views.dashboard),
+    path("site-performance/", views.site_performance),
+    path("site-performance/<uuid:station_id>/", views.site_performance_detail),
     path("postgis/", views.postgis_status),
     path("backups/", views.backups_list),
     path("reports/run/", views.run_report),

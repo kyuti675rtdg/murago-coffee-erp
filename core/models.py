@@ -36,10 +36,31 @@ class Station(TimeStampedUUIDModel):
     station_type = models.CharField(max_length=24, choices=StationType.choices, db_index=True)
     region = models.CharField(max_length=120, blank=True)
     woreda = models.CharField(max_length=120, blank=True)
+    kebele = models.CharField(max_length=120, blank=True)
     altitude_m = models.PositiveIntegerField(null=True, blank=True, help_text="Site altitude (m a.s.l.)")
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    # --- detailed site profile ---
+    phone = models.CharField(max_length=32, blank=True)
+    email = models.EmailField(blank=True)
+    manager_name = models.CharField(max_length=200, blank=True, help_text="Site manager (display name)")
+    established_year = models.PositiveIntegerField(null=True, blank=True)
+    daily_cherry_capacity_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                                   help_text="Max cherry the site can receive/process per day")
+    drying_bed_count = models.PositiveIntegerField(default=0)
+    drying_capacity_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    storage_capacity_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    fermentation_tank_count = models.PositiveIntegerField(default=0)
+    processing_methods = models.JSONField(default=list, blank=True,
+                                          help_text='e.g. ["washed", "natural", "honey"]')
+    water_source = models.CharField(max_length=120, blank=True, help_text="River, spring, borehole, municipal…")
+    water_tank_capacity_litres = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    power_source = models.CharField(max_length=120, blank=True, help_text="Grid, generator, solar, hybrid…")
+    has_generator = models.BooleanField(default=False)
+    generator_capacity_kva = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    internet_type = models.CharField(max_length=80, blank=True, help_text="4G, fibre, VSAT, none…")
+    profile_notes = models.TextField(blank=True)
 
     class Meta(TimeStampedUUIDModel.Meta):
         indexes = [models.Index(fields=["station_type", "is_active"])]
@@ -61,6 +82,13 @@ class Role(TimeStampedUUIDModel):
         FINANCE_MANAGER = "finance_manager", "Finance Manager"
         PURCHASER = "purchaser", "Purchaser / Station Officer"
         ADMIN = "admin", "Admin"
+        SITE_MANAGER = "site_manager", "Site Manager"
+        PROCUREMENT_OFFICER = "procurement_officer", "Procurement Officer"
+        WEIGHING_CLERK = "weighing_clerk", "Weighing Clerk"
+        QUALITY_CONTROLLER = "quality_controller", "Quality Controller"
+        WAREHOUSE_OFFICER = "warehouse_officer", "Warehouse Officer"
+        FIELD_OFFICER = "field_officer", "Field Officer"
+        FINANCE_OFFICER = "finance_officer", "Finance Officer"
 
     code = models.CharField(max_length=32, choices=RoleCode.choices, unique=True)
     description = models.TextField(blank=True)
@@ -229,3 +257,38 @@ class Notification(TimeStampedUUIDModel):
 
     class Meta(TimeStampedUUIDModel.Meta):
         indexes = [models.Index(fields=["user", "is_read", "-created_at"])]
+
+
+class StationEquipment(TimeStampedUUIDModel):
+    """Equipment register for a site: pulpers, generators, scales, hullers…"""
+
+    class EquipmentType(models.TextChoices):
+        PULPER = "pulper", "Pulper / Eco-pulper"
+        GENERATOR = "generator", "Generator"
+        SCALE = "scale", "Weighing Scale"
+        MOISTURE_METER = "moisture_meter", "Moisture Meter"
+        DRYING_BED = "drying_bed", "Drying Bed"
+        WATER_PUMP = "water_pump", "Water Pump"
+        HULLER = "huller", "Huller"
+        GRADER = "grader", "Grader / Sorter"
+        VEHICLE = "vehicle", "Vehicle"
+        OTHER = "other", "Other"
+
+    class Status(models.TextChoices):
+        OPERATIONAL = "operational", "Operational"
+        MAINTENANCE = "maintenance", "Under Maintenance"
+        OUT_OF_SERVICE = "out_of_service", "Out of Service"
+
+    station = models.ForeignKey(Station, on_delete=models.CASCADE, related_name="equipment")
+    name = models.CharField(max_length=200)
+    equipment_type = models.CharField(max_length=20, choices=EquipmentType.choices, db_index=True)
+    capacity_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    capacity_unit = models.CharField(max_length=40, blank=True, help_text="kg/day, kVA, kg, L/h…")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPERATIONAL, db_index=True)
+    purchase_date = models.DateField(null=True, blank=True)
+    last_maintenance_date = models.DateField(null=True, blank=True)
+    next_maintenance_date = models.DateField(null=True, blank=True, db_index=True)
+    notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.station.code} · {self.name}"

@@ -37,9 +37,10 @@ const BADGE_KEYS = new Set(['status', 'result', 'decision', 'severity', 'kyc_sta
 /* ---------------- standard data table ----------------
    Search + client sort (click header) + pagination + loading skeleton +
    honest empty state + error state with retry. `state` = a useList result. */
-export function T({ rows, cols, state, pageSize = 15, searchPlaceholder, onRowClick }: {
+export function T({ rows, cols, state, pageSize = 15, searchPlaceholder, onRowClick, renderCell }: {
   rows: any[]; cols: [string, string][]; state?: any; pageSize?: number; searchPlaceholder?: string
   onRowClick?: (row: any) => void
+  renderCell?: (row: any, key: string) => React.ReactNode | undefined
 }) {
   const t = useT()
   const { lang } = useLang()
@@ -93,7 +94,7 @@ export function T({ rows, cols, state, pageSize = 15, searchPlaceholder, onRowCl
           ))}</tr></thead>
           <tbody>{pageRows.map((r, i) => <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
             className={onRowClick ? 'cursor-pointer hover:opacity-80' : undefined} title={onRowClick ? t('Open profile', 'መገለጫ ክፈት') : undefined}>{cols.map(([k]) => (
-            <td key={k} className="td">{BADGE_KEYS.has(k) || k.endsWith('_status') ? <Badge value={r[k]} /> : String(r[k] ?? '—')}</td>
+            <td key={k} className="td">{(() => { const custom = renderCell?.(r, k); return custom !== undefined ? custom : (BADGE_KEYS.has(k) || k.endsWith('_status') ? <Badge value={r[k]} /> : String(r[k] ?? '—')) })()}</td>
           ))}</tr>)}</tbody>
         </table>
       </div>

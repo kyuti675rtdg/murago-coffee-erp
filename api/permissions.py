@@ -9,34 +9,38 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS
 from core.models import UserStationRole
 
 # app_label -> roles allowed to WRITE
+# Site roles (2026-10-21): site_manager runs a whole site; procurement_officer
+# buys; weighing_clerk weighs/records intakes; quality_controller owns the lab;
+# warehouse_officer owns stores/stock; field_officer owns farmer field data;
+# finance_officer is the site-level finance hand (payments + vouchers).
 WRITE_MATRIX = {
-    "farmers": {"admin", "station_supervisor", "purchaser"},
-    "collection": {"admin", "station_supervisor", "purchaser"},
-    "procurement": {"admin", "station_supervisor", "purchaser", "finance_manager"},
-    "processing": {"admin", "station_supervisor", "industry_professional", "dry_mill_manager", "machine_operator"},
-    "drymill": {"admin", "dry_mill_manager", "industry_professional"},
-    "traceability": {"admin", "station_supervisor", "industry_professional", "dry_mill_manager"},
-    "quality": {"admin", "q_grader", "industry_professional"},
-    "warehouse": {"admin", "station_supervisor", "industry_professional", "dry_mill_manager"},
-    "resources": {"admin", "station_supervisor", "machine_operator", "industry_professional"},
-    "hr": {"admin", "station_supervisor", "finance_manager", "machine_operator"},
+    "farmers": {"admin", "station_supervisor", "purchaser", "site_manager", "procurement_officer", "field_officer"},
+    "collection": {"admin", "station_supervisor", "purchaser", "site_manager", "procurement_officer", "weighing_clerk", "field_officer"},
+    "procurement": {"admin", "station_supervisor", "purchaser", "finance_manager", "site_manager", "procurement_officer", "finance_officer"},
+    "processing": {"admin", "station_supervisor", "industry_professional", "dry_mill_manager", "machine_operator", "site_manager"},
+    "drymill": {"admin", "dry_mill_manager", "industry_professional", "site_manager"},
+    "traceability": {"admin", "station_supervisor", "industry_professional", "dry_mill_manager", "site_manager", "quality_controller"},
+    "quality": {"admin", "q_grader", "industry_professional", "quality_controller", "site_manager"},
+    "warehouse": {"admin", "station_supervisor", "industry_professional", "dry_mill_manager", "site_manager", "warehouse_officer"},
+    "resources": {"admin", "station_supervisor", "machine_operator", "industry_professional", "site_manager", "weighing_clerk"},
+    "hr": {"admin", "station_supervisor", "finance_manager", "machine_operator", "site_manager"},
     "payroll": {"admin", "finance_manager"},
-    "buyers": {"admin", "export_officer", "finance_manager"},
-    "exports": {"admin", "export_officer"},
-    "logistics": {"admin", "export_officer", "station_supervisor"},
+    "buyers": {"admin", "export_officer", "finance_manager", "site_manager"},
+    "exports": {"admin", "export_officer", "site_manager"},
+    "logistics": {"admin", "export_officer", "station_supervisor", "site_manager", "warehouse_officer"},
     "finance": {"admin", "finance_manager"},
-    "payments": {"admin", "finance_manager", "export_officer"},
-    "inventory": {"admin", "station_supervisor", "dry_mill_manager"},
-    "bi": {"admin", "finance_manager", "station_supervisor"},
-    "sync": {"admin", "station_supervisor", "machine_operator"},
+    "payments": {"admin", "finance_manager", "export_officer", "finance_officer"},
+    "inventory": {"admin", "station_supervisor", "dry_mill_manager", "site_manager", "warehouse_officer"},
+    "bi": {"admin", "finance_manager", "station_supervisor", "site_manager", "finance_officer"},
+    "sync": {"admin", "station_supervisor", "machine_operator", "site_manager", "weighing_clerk", "field_officer"},
     "sysconf": {"admin"},
-    "core": {"admin"},
+    "core": {"admin", "site_manager"},
 }
 # apps whose READS are restricted (financially sensitive)
 READ_RESTRICTED = {
-    "payroll": {"admin", "finance_manager", "station_supervisor"},
-    "finance": {"admin", "finance_manager", "station_supervisor"},
-    "payments": {"admin", "finance_manager", "export_officer", "station_supervisor"},
+    "payroll": {"admin", "finance_manager", "station_supervisor", "site_manager", "finance_officer"},
+    "finance": {"admin", "finance_manager", "station_supervisor", "site_manager", "finance_officer"},
+    "payments": {"admin", "finance_manager", "export_officer", "station_supervisor", "site_manager", "finance_officer", "procurement_officer"},
 }
 
 def user_role_codes(user):

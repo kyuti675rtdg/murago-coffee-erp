@@ -43,6 +43,7 @@ from sysconf import models as sysconf_m
 
 REGISTRY = [
     ("organizations", core_m.Organization), ("stations", core_m.Station),
+    ("station-equipment", core_m.StationEquipment),
     ("roles", core_m.Role), ("user-station-roles", core_m.UserStationRole),
     ("signature-credentials", core_m.SignatureCredential), ("dual-signoffs", core_m.DualSignOff),
     ("audit-logs", core_m.AuditLog), ("dashboard-snapshots", core_m.DashboardSnapshot),
@@ -631,6 +632,48 @@ class ContainerViewSet(StationScopedViewSet):
 
 
 # ---------------------------------------------------------------- dashboard / BI
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def site_performance(request):
+    """Admin Site Performance: per-station KPI comparison (optional ?from=&to=)."""
+    from core.siteperf import parse_range, station_metrics
+
+    date_from, date_to = parse_range(request)
+    ids = user_station_ids(request.user)
+    stations = core_m.Station.objects.filter(is_active=True).order_by("code")
+    if ids is not None:
+        stations = stations.filter(id__in=ids)
+    rows = [station_metrics(s, date_from, date_to) for s in stations]
+    totals = {
+        "stations": len(rows),
+        "collected_kg": str(sum((Decimal(r["collected_kg"]) for r in rows), Decimal("0"))),
+        "procurement_cost_etb": str(sum((Decimal(r["procurement_cost_etb"]) for r in rows), Decimal("0"))),
+        "farmers": sum(r["farmers"] for r in rows),
+        "alerts": sum(len(r["alerts"]) for r in rows),
+    }
+    return Response({"stations": rows, "totals": totals,
+                     "range": {"from": str(date_from) if date_from else None,
+                               "to": str(date_to) if date_to else None}})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def site_performance_detail(request, station_id):
+    """Drill-down for one station: series, top farmers, staff, recent lots."""
+    from core.siteperf import parse_range, station_detail
+
+    station = get_object_or_404(core_m.Station, pk=station_id)
+    ids = user_station_ids(request.user)
+    if ids is not None and station.id not in ids:
+        return _err("This station is outside your assigned scope.", status.HTTP_403_FORBIDDEN)
+    date_from, date_to = parse_range(request)
+    data = station_detail(station, date_from, date_to)
+    data["profile"] = serializer_for(core_m.Station)(station).data
+    data["equipment"] = serializer_for(core_m.StationEquipment)(
+        station.equipment.all().order_by("equipment_type", "name"), many=True).data
+    return Response(data)
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dashboard(request):

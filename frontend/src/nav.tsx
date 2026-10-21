@@ -4,12 +4,13 @@ import {
   Boxes, Truck, Route, Fuel, Droplets, PackageSearch, UserCog, CalendarDays, Wallet,
   Building2, FileSignature, Package, Container, CreditCard, BookOpen, ReceiptText,
   PiggyBank, BarChart3, Smartphone, Settings, KeyRound, ScrollText, DatabaseBackup,
+  Gauge, Factory,
   Sprout, ShoppingCart, type LucideIcon,
 } from 'lucide-react'
 
 export type Leaf = {
   id: string; label: string; subtitle: string; labelAm?: string; subtitleAm?: string; icon: LucideIcon
-  file: 'core' | 'quality' | 'ops' | 'admin' | 'farm'; export: string; view?: string
+  file: 'core' | 'quality' | 'ops' | 'admin' | 'farm' | 'site'; export: string; view?: string
   roles?: string[] // role codes that may READ this page (mirrors API RBAC); undefined = all authenticated
 }
 export type Group = { id: string; label: string; labelAm?: string; icon: LucideIcon; leaves: Leaf[] }
@@ -22,9 +23,11 @@ export const NAV: Group[] = [
   { id: 'command', label: 'Command', labelAm: 'ቁጥጥር', icon: LayoutDashboard, leaves: [
     { id: 'dashboard', label: 'Executive Dashboard', subtitle: 'Live Operations Command Center — station & pipeline telemetry', labelAm: 'ዋና ዳሽቦርድ', subtitleAm: 'የቀጥታ ሥራ ማዕከል — የጣቢያ እና የሂደት መረጃ', icon: LayoutDashboard, file: 'core', export: 'Dashboard' },
     { id: 'financial', label: 'Financial Position', subtitle: 'Executive Financial & Contract Summary — committed vs unallocated stock, cash float, landed cost', labelAm: 'የፋይናንስ ሁኔታ', subtitleAm: 'የፋይናንስ እና የውል ማጠቃለያ — ክምችት፣ ገንዘብ እና ወጪ', icon: Landmark, file: 'core', export: 'FinancialPosition' },
+    { id: 'site-performance', label: 'Site Performance', subtitle: 'Admin dashboard: compare sites & stations — volumes, costs, yields, quality, stock, efficiency, staff & alerts', labelAm: 'የጣቢያ አፈጻጸም', subtitleAm: 'የአስተዳዳሪ ዳሽቦርድ፦ ጣቢያዎችን አወዳድር — መጠን፣ ወጪ፣ ውጤት፣ ጥራት፣ ክምችት፣ ብቃት', icon: Gauge, file: 'site', export: 'SitePerformance', roles: ['admin', 'finance_manager', 'finance_officer', 'site_manager', 'station_supervisor'] },
     { id: 'notifications', label: 'Notifications', subtitle: 'Module 24 — anomalies, approvals and payroll events', labelAm: 'ማሳወቂያዎች', subtitleAm: 'ሞዱል 24 — ማስጠንቅቂያዎች፣ ማጽደቆች እና የደመወዝ ክስተቶች', icon: Bell, file: 'admin', export: 'NotificationsPage' },
   ]},
   { id: 'supply', label: 'Supply Base', labelAm: 'አቅርቦት', icon: Sprout, leaves: [
+    { id: 'sites-directory', label: 'Sites & Washing Stations', subtitle: 'Site profiles: GPS, capacity, processing methods, equipment, utilities, staff & performance', labelAm: 'ጣቢያዎች እና ማጠቢያ ጣቢያዎች', subtitleAm: 'የጣቢያ መገለጫዎች፦ GPS፣ አቅም፣ ዘዴዎች፣ መሳሪያዎች፣ አገልግሎቶች፣ ሠራተኞች', icon: Factory, file: 'site', export: 'Sites' },
     { id: 'farmers-directory', label: 'Farmer Directory', subtitle: 'Outgrower Registry — farmer profiles and delivery caps', labelAm: 'የገበሬዎች ዝርዝር', subtitleAm: 'የገበሬ መገለጫዎች እና የማድረሻ ገደብ', icon: Users, file: 'core', export: 'Farmers', view: 'directory' },
     { id: 'farmers-kyc', label: 'KYC & Documents', subtitle: 'Farmer KYC status and document vault (national ID, land certificates)', labelAm: 'ማንነትና ሰነዶች', subtitleAm: 'የገበሬ ማንነት ሁኔታ እና የሰነድ ማስቀመጫ', icon: FileCheck, file: 'core', export: 'FarmerKyc' },
     { id: 'farmer-planning', label: 'Farmer Planning', subtitle: 'Next-year production plans, targets and support needs per farmer', labelAm: 'የገበሬ እቅድ', subtitleAm: 'የሚቀጥለው ዓመት የምርት እቅዶች፣ ኢላማዎች እና የድጋፍ ፍላጎቶች', icon: Sprout, file: 'farm', export: 'FarmerPlanning' },
