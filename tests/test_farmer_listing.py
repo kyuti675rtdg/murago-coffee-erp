@@ -60,6 +60,16 @@ class FarmerListingTests(TestCase):
         self.assertEqual(r.status_code, 204)
         self.assertEqual(self.client.get(f"/api/farmers/{fid}/").status_code, 404)
 
+    def test_double_slash_api_urls_are_healed(self):
+        """Regression: a shipped frontend build requested /api//farmers/
+        (double slash) and every table 404'd. The slash-collapsing
+        middleware must route those URLs normally."""
+        r = self.client.get("/api//farmers/")
+        self.assertEqual(r.status_code, 200)
+        self.assertGreaterEqual(r.json()["count"], 26)
+        r = self.client.get("/api//stations/")
+        self.assertEqual(r.status_code, 200)
+
     def test_dashboard_management_kpis(self):
         r = self.client.get("/api/dashboard/")
         self.assertEqual(r.status_code, 200)

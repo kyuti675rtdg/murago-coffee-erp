@@ -9,7 +9,8 @@ export class ApiError extends Error { status: number; body: any; constructor(sta
 export async function api(path: string, opts: RequestInit = {}): Promise<any> {
   const headers: any = { 'Content-Type': 'application/json', ...(opts.headers || {}) }
   const t = getToken(); if (t) headers.Authorization = `Token ${t}`
-  const res = await fetch(path.startsWith('/api') ? path : `/api/${path}`, { ...opts, headers })
+  const cleanPath = path.startsWith('/api') ? path : `/api/${path.replace(/^\/+/, '')}`
+  const res = await fetch(cleanPath, { ...opts, headers })
   const body = res.status === 204 ? null : await res.json().catch(() => null)
   if (!res.ok) throw new ApiError(res.status, body)
   return body

@@ -67,6 +67,7 @@ if GIS_AVAILABLE:
     INSTALLED_APPS.insert(6, "django.contrib.gis")
 
 MIDDLEWARE = [
+    "murago.middleware.CollapseSlashesMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
