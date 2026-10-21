@@ -115,3 +115,12 @@ new API). React SPA with all 23 module pages built and served at `/app/`.
 3.6 verified live on the shared hms-db logical database `murago`
 (`GET /api/postgis/` → postgis_version + geometry smoke OK), live FSM test:
 illegal skip → 400, legal transition → 200 with pulping_date stamped.
+
+## Phase 4 — Production Readiness (2026-10-21)
+42/42 tests (17 P1 + 12 P2 + 12 P4 + 1 E2E full chain). Implemented: mass-balance
+reconciliation, journal posting enforcement, export document checklist gate,
+stock reconciliation workflow, notifications centre (Module 24), voucher
+approval hierarchy, backup command (Module 25), hardening flags, attendance
+upsert fix. Redeployed (dep-dbc9km8ae00c7392ag70) and re-verified live incl.
+live mass-balance + checklist gate. Full record: PRODUCTION-READINESS-REPORT.md
++ GAP-ANALYSIS-MATRIX.md in the delivery folder.
