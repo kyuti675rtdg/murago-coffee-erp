@@ -101,3 +101,17 @@ bi 2 · sync 2 · sysconf 5 → **85 models, 85 domain tables**.
 - Signature *credential storage* uses Django's password hashers for PINs and
   SHA-256 binding for signature artefacts; a full PKI/HSM integration is a
   production-hardening item, not Phase 1.
+
+---
+
+## Phase 2 & 3 — COMPLETE (2026-10-21)
+
+Full record: `PHASE2-3-VERIFICATION.md`. Summary: 85 DRF viewsets + 13 engine
+action endpoints + sync/dashboard/BI/PostGIS endpoints (380 API URL patterns),
+Token auth + RBAC matrix + station scoping, 29/29 tests pass (17 Phase-1 + 12
+new API). React SPA with all 23 module pages built and served at `/app/`.
+**LIVE at https://murago-coffee-erp.onrender.com** (Render
+`srv-dbc9aa61egvs739u4840`, GitHub `kyuti675rtdg/murago-coffee-erp`), PostGIS
+3.6 verified live on the shared hms-db logical database `murago`
+(`GET /api/postgis/` → postgis_version + geometry smoke OK), live FSM test:
+illegal skip → 400, legal transition → 200 with pulping_date stamped.

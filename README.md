@@ -1,9 +1,52 @@
-# Murago Coffee ERP (Bean Power ERP) — Phase 1
+# Murago Coffee ERP (Bean Power ERP) — Phases 1–3 COMPLETE & LIVE
 
 End-to-end farm-to-export coffee processing, traceability and ERP system for
 Ethiopian washing stations, dry mills and export operations.
-**Phase 1 = database & core domain architecture** (this repo). APIs are Phase 2,
-frontend Phase 3 — see `VERIFICATION.md` for the honest status per module.
+
+**🌐 Live: https://murago-coffee-erp.onrender.com** — app at `/app/`, API at
+`/api/`, OpenAPI schema at `/api/schema/` (Swagger UI `/api/docs/`), health at
+`/health/`. Demo logins: see `PHASE2-3-VERIFICATION.md` (demo only).
+Phase 1 = database & core domain engines (`VERIFICATION.md`) · Phase 2 = REST
+API + RBAC + sync · Phase 3 = React PWA frontend, all 23 modules
+(`PHASE2-3-VERIFICATION.md`).
+
+## Run locally
+
+```bash
+./start.sh                       # backend on 127.0.0.1:8910 (SQLite fallback if DATABASE_URL unset)
+cd frontend && npm install && npm run dev   # SPA dev server (proxies /api to :8910)
+python manage.py test tests      # 29 tests (17 engine + 12 API)
+python manage.py seed_demo       # idempotent demo data
+```
+
+## Deploy (Render)
+
+One free web service serves API + SPA. Build: `./build.sh` (pip + npm build +
+collectstatic; a committed `frontend/dist` is the fallback if npm is absent).
+Start: `python scripts/ensure_db.py && python manage.py migrate --noinput &&
+python manage.py check_postgis && python manage.py seed_demo && gunicorn
+murago.wsgi:application --bind 0.0.0.0:$PORT --workers 2`.
+DB: logical database `murago` on the shared `hms-db` Postgres (Render free
+tier = one free DB), via env `DATABASE_URL` (…/murago) +
+`MURAGO_BASE_DATABASE_URL` (instance default DB, used by ensure_db).
+Required env: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,
+`DJANGO_ALLOWED_HOSTS=.onrender.com`, `MURAGO_USE_GIS=0`.
+
+## API overview
+
+Auth: **TokenAuthentication** — `POST /api/auth/login/` → `{token, user}`,
+send `Authorization: Token <token>`. 85 viewsets (one per model) under
+`/api/<resource>/` with RBAC (role write matrix in `api/permissions.py`) and
+station-scoped querysets. Engine actions: `POST /api/lots/{id}/transition/|
+advance/|split/`, `POST /api/lots/blend/`, `GET /api/lots/{id}/traceability/`,
+`POST /api/drying-handovers/{id}/dual-sign/`, `POST /api/stock-transfers/{id}/
+dual-sign/`, `POST /api/cupping-scores/{id}/decide/`, `POST
+/api/attendance-sheets/{id}/verify/|generate-payroll/`, `POST
+/api/payroll-periods/{id}/approve/`, `POST /api/payroll-lines/{id}/
+sign-recipient/`, computed-ratio creates on `/api/fuel-entries/` +
+`/api/water-entries/`, `GET /api/dashboard/`, `POST /api/reports/run/`,
+`GET /api/lot-costing/{lot_id}/`, `GET /api/postgis/`, offline sync
+`POST /api/sync/push/` + `GET /api/sync/pull/?since=`.
 
 ## Stack decision
 
@@ -14,7 +57,7 @@ frontend Phase 3 — see `VERIFICATION.md` for the honest status per module.
 | Local fallback | SQLite **only** for local check/test when `DATABASE_URL` is unset. Documented, never a production target. |
 | GIS locally | GDAL/GEOS native libraries were **not available** on the build machine (apt install blocked by broken package deps), so locally `FarmPlot.boundary/centroid` fall back to GeoJSON `JSONField` storage. The same model code uses real GeoDjango `PolygonField`/`PointField` (SRID 4326) whenever GDAL is present, and `sql/phase1_schema.sql` carries the production `geometry(Polygon,4326)` DDL + GiST indexes. |
 | IDs | **UUIDv7** primary keys everywhere (`core/ids.py`, RFC 9562) — time-ordered, offline-safe for field devices (Module 21 sync). |
-| Frontend / Mobile | Phase 3 (React/Vite) and Phase 2/3 offline PWA — schema + sync models are Phase-1 ready. |
+| Frontend / Mobile | **React 19 + Vite + TypeScript + Tailwind 4** SPA in `frontend/`, built output served by Django at `/app/`; PWA (manifest + service worker + IndexedDB offline queue). AG Grid Community (attendance), Leaflet (farm polygons), Recharts (dashboard/cupping radar), TanStack Query, Zustand. |
 
 Django was chosen over Laravel for this codebase because Orbit's existing
 platforms are Django, GeoDjango/PostGIS is first-class, and the domain engines
