@@ -44,7 +44,7 @@ from sysconf import models as sysconf_m
 
 REGISTRY = [
     ("organizations", core_m.Organization), ("stations", core_m.Station),
-    ("station-equipment", core_m.StationEquipment),
+    ("station-equipment", core_m.StationEquipment), ("site-cameras", core_m.SiteCamera),
     ("roles", core_m.Role), ("user-station-roles", core_m.UserStationRole),
     ("signature-credentials", core_m.SignatureCredential), ("dual-signoffs", core_m.DualSignOff),
     ("audit-logs", core_m.AuditLog), ("dashboard-snapshots", core_m.DashboardSnapshot),

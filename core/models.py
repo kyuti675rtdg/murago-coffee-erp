@@ -292,3 +292,38 @@ class StationEquipment(TimeStampedUUIDModel):
 
     def __str__(self):
         return f"{self.station.code} · {self.name}"
+
+
+class SiteCamera(TimeStampedUUIDModel):
+    """Site Monitoring (CCTV): a camera viewpoint at a station.
+
+    Demo cameras render a clearly-labelled simulated feed in the app. Real
+    cameras carry an HLS/MP4 stream URL produced by the site's NVR/gateway
+    (e.g. MediaMTX/Frigate converting RTSP → HLS) and play natively.
+    """
+
+    class StreamType(models.TextChoices):
+        DEMO = "demo", "Demo feed (simulated)"
+        HLS = "hls", "HLS stream (.m3u8)"
+        MP4 = "mp4", "MP4 / WebM stream"
+
+    class Status(models.TextChoices):
+        DEMO = "demo", "Demo"
+        ONLINE = "online", "Online"
+        OFFLINE = "offline", "Offline"
+
+    station = models.ForeignKey(Station, on_delete=models.CASCADE, related_name="cameras")
+    name = models.CharField(max_length=200, help_text="e.g. CAM 01 — Reception & Weighbridge")
+    area = models.CharField(max_length=200, blank=True, help_text="What the camera watches")
+    stream_type = models.CharField(max_length=8, choices=StreamType.choices, default=StreamType.DEMO)
+    stream_url = models.URLField(max_length=600, blank=True,
+                                 help_text="HLS (.m3u8) or MP4/WebM URL from the site NVR/gateway; blank for demo")
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.DEMO, db_index=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta(TimeStampedUUIDModel.Meta):
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return f"{self.station.code} · {self.name}"

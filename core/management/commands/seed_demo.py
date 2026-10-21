@@ -153,6 +153,8 @@ class Command(BaseCommand):
         call_command("seed_demo_farmers")
         # Site profiles, equipment, site roles/users, Bensa station — idempotent
         call_command("seed_demo_sites")
+        # Site Monitoring camera wall (8 demo cameras) — idempotent
+        call_command("seed_demo_cameras")
 
         self.stdout.write(self.style.SUCCESS(
             f"Murago demo seed complete: station={station.code} lots={Lot.objects.count()} "
