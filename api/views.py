@@ -1,5 +1,6 @@
 from pathlib import Path
 """Phase 2 REST API — viewsets for all 23 modules + engine-wired actions."""
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -706,7 +707,33 @@ def dashboard(request):
         "farmers": farmers_m.Farmer.objects.count(),
         "containers_open": exports_m.ContainerLoading.objects.exclude(status="shipped").count(),
         **_management_insights(ids),
+        **_dashboard_analytics(ids),
     })
+
+
+def _dashboard_analytics(ids):
+    """Chart-ready analytics for the executive dashboard."""
+    from django.utils import timezone as _tz
+
+    intakes = collection_m.CherryIntake.objects.all()
+    intakes = _station_filter(intakes, collection_m.CherryIntake, ids)
+    today = _tz.localdate()
+    trend = []
+    for offset in range(13, -1, -1):
+        day = today - timedelta(days=offset)
+        agg = intakes.filter(intake_date=day).aggregate(
+            kg=dj_models.Sum("payable_kg"), amount=dj_models.Sum("total_amount"))
+        trend.append({"date": str(day), "kg": str(agg["kg"] or Decimal("0")),
+                      "amount": str(agg["amount"] or Decimal("0"))})
+    components = ["fragrance_aroma", "flavour", "aftertaste", "acidity", "body",
+                  "balance", "uniformity", "clean_cup", "sweetness", "overall"]
+    scores = quality_m.CuppingScore.objects.all()
+    quality_avg = None
+    if scores.exists():
+        avgs = scores.aggregate(**{f"a_{c}": dj_models.Avg(c) for c in components})
+        quality_avg = str(sum((avgs[f"a_{c}"] or Decimal("0")) for c in components).quantize(Decimal("0.01")))
+    return {"collection_trend": trend, "quality_avg": quality_avg,
+            "cupping_sessions": scores.count()}
 
 
 def _management_insights(ids):

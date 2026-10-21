@@ -5,38 +5,121 @@ import { Badge, Field, Section, StationSelect, T, UserSelect, errMsg, useList, u
 import { useT } from './i18n'
 import { FarmerProfile } from './pages-farm'
 import L from 'leaflet'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Award, Boxes, Cherry, ClipboardCheck, Coffee, FileText, Fuel, Package, Scale, TrendingUp, Users, Wallet, Warehouse } from 'lucide-react'
 
 const STAGES = ['harvesting_sorting', 'receiving', 'pulping', 'fermenting', 'washing', 'drying', 'conditioning', 'dry_milling', 'bag_marking', 'packing', 'storing', 'exporting']
 export function Dashboard() {
   const t = useT()
   const q = useQuery({ queryKey: ['dashboard'], queryFn: () => api('/api/dashboard/') })
   const d = q.data
+  const perfQ = useQuery({ queryKey: ['site-performance', 'dashboard'], queryFn: () => api('/api/site-performance/') })
   const snapshotsQ = useList('/dashboard-snapshots/'); const snapshots = snapshotsQ.rows
-  if (!d) return q.isError ? <div className="card text-sm" style={{color:'var(--danger)'}}>{t('Dashboard unavailable', 'ዳሽቦርዱ አይገኝም')}: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>{t('Retry', 'እንደገና ሞክር')}</button></div> : <div className="space-y-2">{[0,1,2].map(i=><div key={i} className="skeleton h-20 w-full" />)}</div>
-  const stageData = STAGES.map((s) => ({ stage: s.replace(/_/g, ' '), lots: d.lots_by_stage?.[s] ?? 0 }))
-  const kpis: [string, any][] = [[t('Lots in pipeline', 'በሂደት ላይ ያሉ ሎቶች'), d.lots_total], [t('Cherry procured (kg)', 'የተገዛ ቼሪ (ኪ.ግ)'), d.cherry_procured_kg], [t('Warehouse stock (kg)', 'የመጋዘን ክምችት (ኪ.ግ)'), d.warehouse_stock_kg], [t('Open export contracts', 'ክፍት የኤክስፖርት ውሎች'), d.open_contracts], [t('Committed stock (kg)', 'የተወሰነ ክምችት (ኪ.ግ)'), d.committed_kg], [t('Farmers registered', 'የተመዘገቡ ገበሬዎች'), d.farmers], [t('Containers open', 'ክፍት ኮንቴይነሮች'), d.containers_open], [t('Avg fuel ratio (L/kg)', 'አማካይ የነዳጅ ሬሽዮ (ሊ/ኪ.ግ)'), String(d.avg_fuel_ratio).slice(0, 7)], [t('Avg water ratio (L/kg)', 'አማካይ የውሃ ሬሽዮ (ሊ/ኪ.ግ)'), String(d.avg_water_ratio).slice(0, 7)], [t('Fuel anomalies', 'የነዳጅ ያልተለመዱ ሁኔታዎች'), d.fuel_anomalies], [t('Water anomalies', 'የውሃ ያልተለመዱ ሁኔታዎች'), d.water_anomalies]]
-  const insightKpis: [string, any, string][] = [
-    [t('Procurement spend', 'የግዥ ወጪ'), `ETB ${Number(d.procurement_cost_etb ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, t('Total paid value of recorded cherry procurement', 'የተመዘገበ የቼሪ ግዥ ጠቅላላ ዋጋ')],
-    [t('Avg buying price', 'አማካይ የግዥ ዋጋ'), `ETB ${Number(d.avg_price_per_kg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}/kg`, t('Use this to watch daily price discipline by site', 'የዋጋ ቁጥጥርን በጣቢያ ለመከታተል ይጠቀሙ')],
-    [t('Active supplying farmers', 'ንቁ አቅራቢ ገበሬዎች'), `${d.active_farmers ?? 0} · ${d.active_farmer_pct ?? 0}%`, t('Registered farmers who delivered coffee in the data set', 'ቡና ካቀረቡ የተመዘገቡ ገበሬዎች')],
-    [t('Pending voucher approvals', 'በመጠበቅ ላይ የወረቀት ማጽደቆች'), d.pending_vouchers ?? 0, t('Procurement vouchers waiting for the next approval step', 'ለሚቀጥለው ማጽደቅ የሚጠብቁ የግዥ ወረቀቶች')],
-    [t('Pending bonus approvals', 'በመጠበቅ ላይ የጉርሻ ማጽደቆች'), d.pending_bonuses ?? 0, t('Calculated farmer bonuses waiting for approval', 'ማጽደቅ የሚጠብቁ የተሰሉ የገበሬ ጉርሻዎች')],
-    [t('Approved bonus liability', 'የጸደቀ የጉርሻ ክፍያ'), `ETB ${Number(d.bonus_liability_etb ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, t('Approved but unpaid farmer bonus exposure', 'የጸደቀ ግን ያልተከፈለ የገበሬ ጉርሻ')],
-    [t('Top supplying site', 'ምርጥ አቅራቢ ጣቢያ'), d.top_station_code ?? '—', `${Number(d.top_station_kg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg ${t('collected', 'ተሰብስቧል')}`],
-    [t('Unallocated stock', 'ያልተመደበ ክምችት'), `${Math.max(0, Number(d.warehouse_stock_kg ?? 0) - Number(d.committed_kg ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`, t('Warehouse stock not yet committed to contracts', 'እስካሁን ለውሎች ያልተወሰነ የመጋዘን ክምችት')],
+  if (!d) return q.isError ? <div className="card text-sm" style={{ color: 'var(--danger)' }}>{t('Dashboard unavailable', 'ዳሽቦርዱ አይገኝም')}: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>{t('Retry', 'እንደገና ሞክር')}</button></div> : <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-24 w-full" />)}</div>
+  const fmt = (v: any, dec = 0) => Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: dec, minimumFractionDigits: dec })
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const stock = Number(d.warehouse_stock_kg ?? 0); const committed = Number(d.committed_kg ?? 0)
+  const allocPct = stock > 0 ? Math.min(100, Math.round(committed / stock * 100)) : 0
+  const trend = (d.collection_trend ?? []).map((x: any) => ({ date: String(x.date).slice(5), kg: Number(x.kg), amount: Number(x.amount) }))
+  const stageData = STAGES.map((s) => ({ stage: s.replace(/_/g, ' '), lots: d.lots_by_stage?.[s] ?? 0 })).filter((x) => x.lots > 0)
+  const siteData = (perfQ.data?.stations ?? []).map((s: any) => ({ code: s.code, kg: Number(s.collected_kg ?? 0), quality: Number(s.avg_quality ?? s.quality_avg ?? 0), efficiency: Number(s.efficiency ?? 0) }))
+  const PIE_COLORS = ['#d97706', '#92400e', '#65a30d', '#0ea5e9', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#78716c', '#22c55e', '#e11d48', '#3b82f6']
+  const heroStats: [string, string][] = [
+    [t('Cherry procured', 'የተገዛ ቼሪ'), `${fmt(d.cherry_procured_kg)} kg`],
+    [t('Procurement spend', 'የግዥ ወጪ'), `ETB ${fmt(d.procurement_cost_etb)}`],
+    [t('Warehouse stock', 'የመጋዘን ክምችት'), `${fmt(d.warehouse_stock_kg)} kg`],
+    [t('Active farmers', 'ንቁ ገበሬዎች'), `${d.active_farmer_pct ?? 0}%`],
   ]
-    return (<div>
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mb-4">{kpis.map(([l, v]) => <div key={l} className="card"><div className="lbl">{l}</div><div className="kpi">{String(v)}</div></div>)}</div>
-    <Section title={t('Management Insights — decision KPIs', 'የአመራር ግንዛቤዎች — የውሳኔ KPIዎች')} sub={t('Live financial, supply-base, approval and bonus indicators for management decisions — not static demo numbers.', 'ለአመራር ውሳኔዎች የቀጥታ ፋይናንስ፣ አቅርቦት፣ ማጽደቅ እና የጉርሻ አመልካቾች — ቋሚ የሙከራ ቁጥሮች አይደለም።')}>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {insightKpis.map(([l, v, hint]) => <div key={l} className="rounded-xl p-3" style={{ background: 'var(--surface2)' }}><div className="lbl">{l}</div><div className="text-xl font-bold mt-1">{String(v)}</div><div className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>{hint}</div></div>)}
+  const cards: { icon: any; tint: string; label: string; value: string; hint: string; extra?: any }[] = [
+    { icon: Package, tint: '#d97706', label: t('Lots in pipeline', 'በሂደት ላይ ያሉ ሎቶች'), value: fmt(d.lots_total), hint: t('Across all processing stages', 'በሁሉም የማምረት ደረጃዎች') },
+    { icon: Scale, tint: '#0ea5e9', label: t('Avg buying price', 'አማካይ የግዥ ዋጋ'), value: `ETB ${fmt(d.avg_price_per_kg, 2)}`, hint: t('Per kg of payable cherry', 'በኪሎ ግራም የሚከፈል ቼሪ') },
+    { icon: Award, tint: '#65a30d', label: t('Avg quality score', 'አማካይ የጥራት ነጥብ'), value: d.quality_avg ?? '—', hint: `${d.cupping_sessions ?? 0} ${t('cupping sessions scored', 'የቅምሻ ክፍለ-ጊዜዎች')}` },
+    { icon: FileText, tint: '#8b5cf6', label: t('Open export contracts', 'ክፍት የኤክስፖርት ውሎች'), value: fmt(d.open_contracts), hint: `${fmt(d.containers_open)} ${t('containers in preparation', 'ኮንቴይነሮች በዝግጅት ላይ')}` },
+    { icon: Boxes, tint: '#b45309', label: t('Committed stock', 'የተወሰነ ክምችት'), value: `${fmt(d.committed_kg)} kg`, hint: `${allocPct}% ${t('of warehouse stock allocated', 'የመጋዘን ክምችት ተመድቧል')}`, extra: <div className="h-1.5 rounded-full mt-2" style={{ background: 'var(--border)' }}><div className="h-1.5 rounded-full" style={{ width: `${allocPct}%`, background: '#b45309' }} /></div> },
+    { icon: Wallet, tint: '#e11d48', label: t('Bonus liability', 'የጉርሻ ክፍያ'), value: `ETB ${fmt(d.bonus_liability_etb)}`, hint: `${d.pending_bonuses ?? 0} ${t('bonuses awaiting approval', 'ጉርሻዎች ማጽደቅ ይጠብቃሉ')}` },
+    { icon: ClipboardCheck, tint: '#14b8a6', label: t('Pending approvals', 'በመጠበቅ ላይ ያሉ ማጽደቆች'), value: fmt((d.pending_vouchers ?? 0) + (d.pending_bonuses ?? 0)), hint: `${d.pending_vouchers ?? 0} ${t('vouchers', 'ወረቀቶች')} · ${d.pending_bonuses ?? 0} ${t('bonuses', 'ጉርሻዎች')}` },
+    { icon: Fuel, tint: '#78716c', label: t('Fuel anomalies', 'የነዳጅ ያልተለመዱ ሁኔታዎች'), value: fmt(d.fuel_anomalies), hint: `${fmt(d.water_anomalies)} ${t('water anomalies · investigate promptly', 'የውሃ ያልተለመዱ ሁኔታዎች · ወዲያውኑ ይመርምሩ')}` },
+  ]
+  return (<div>
+    {/* ——— Hero band ——— */}
+    <div className="rounded-3xl p-5 sm:p-6 mb-4 text-white relative overflow-hidden" style={{ background: 'linear-gradient(120deg, #451a03 0%, #92400e 48%, #d97706 100%)', boxShadow: 'var(--shadow-lg)' }}>
+      <div className="absolute -right-8 -top-10 opacity-15"><Coffee size={190} /></div>
+      <div className="relative flex flex-col lg:flex-row lg:items-end gap-5">
+        <div className="min-w-[220px]">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-white/70 font-semibold">{today}</div>
+          <h2 className="text-2xl sm:text-[28px] font-bold leading-tight mt-1">{t('Operations at a glance', 'የሥራ ማጠቃለያ')}</h2>
+          <p className="text-white/80 text-sm mt-1 max-w-sm">{t('Live Murago Coffee operations — procurement, processing, quality and export position, updated from the database in real time.', 'የሙራጎ ቡና የቀጥታ ሥራዎች — ግዥ፣ ማምረት፣ ጥራት እና የኤክስፖርት ሁኔታ፣ በቅጽበት ከዳታቤዙ የሚዘምን።')}</p>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
+          {heroStats.map(([l, v]) => <div key={l} className="rounded-2xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.22)', backdropFilter: 'blur(4px)' }}><div className="text-[11px] uppercase tracking-wide text-white/75 font-medium">{l}</div><div className="text-lg sm:text-xl font-bold mt-0.5">{v}</div></div>)}
+        </div>
       </div>
-    </Section>
-    <Section title="Station & Pipeline Telemetry — lots by FSM stage" sub="Live Operations Command Center · contract position: committed vs warehouse stock shown above">
-      <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={stageData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="stage" tick={{ fontSize: 10, fill: "var(--muted)" }} interval={0} angle={-30} textAnchor="end" height={60} /><YAxis allowDecimals={false} tick={{ fill: "var(--muted)" }} /><Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }} /><Bar dataKey="lots" fill="var(--accent)" /></BarChart></ResponsiveContainer></div>
-    </Section>
-    <Section title="Executive Financial & Contract Summary (snapshots)"><T state={snapshotsQ} rows={snapshots} cols={[['snapshot_date', 'Date'], ['cherry_procured_kg', 'Cherry kg'], ['warehouse_stock_kg', 'Stock kg'], ['cash_float_balance', 'Cash float'], ['landed_cost_per_kg', 'Landed cost/kg'], ['export_containers_open', 'Containers']]} /></Section>
+    </div>
+
+    {/* ——— KPI cards ——— */}
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mb-4">
+      {cards.map((c) => { const Icon = c.icon; return (
+        <div key={c.label} className="card !p-4 transition-shadow hover:shadow-lg">
+          <div className="flex items-start justify-between gap-2">
+            <div><div className="lbl">{c.label}</div><div className="text-[22px] leading-7 font-bold mt-1">{c.value}</div></div>
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl shrink-0" style={{ background: `${c.tint}1f`, color: c.tint }}><Icon size={18} /></span>
+          </div>
+          <div className="text-[11px] mt-1.5" style={{ color: 'var(--muted)' }}>{c.hint}</div>
+          {c.extra}
+        </div>) })}
+    </div>
+
+    {/* ——— Charts row ——— */}
+    <div className="grid xl:grid-cols-3 gap-4 mb-4">
+      <Section className="xl:col-span-2" title={t('Collection Trend — last 14 days', 'የመሰብሰብ አዝማሚያ — ያለፉት 14 ቀናት')} sub={t('Payable cherry collected per day (kg) — hover for ETB value', 'በቀን የተሰበሰበ የሚከፈል ቼሪ (ኪ.ግ) — ለብር ዋጋ ላይ ያንዣብቡ')}>
+        <div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend}>
+          <defs><linearGradient id="kgFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d97706" stopOpacity={0.45} /><stop offset="100%" stopColor="#d97706" stopOpacity={0.04} /></linearGradient></defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+          <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+          <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 10 }} formatter={(v: any, name: any) => name === 'kg' ? [`${fmt(v)} kg`, t('Collected', 'ተሰብስቧል')] : [`ETB ${fmt(v)}`, t('Value', 'ዋጋ')]} />
+          <Area type="monotone" dataKey="kg" stroke="#d97706" strokeWidth={2.2} fill="url(#kgFill)" />
+          <Area type="monotone" dataKey="amount" stroke="transparent" fill="transparent" />
+        </AreaChart></ResponsiveContainer></div>
+      </Section>
+      <Section title={t('Lots by Processing Stage', 'ሎቶች በማምረት ደረጃ')} sub={t('Where coffee sits in the pipeline right now', 'ቡናው አሁን በሂደቱ የት እንዳለ')}>
+        <div className="relative h-52"><ResponsiveContainer width="100%" height="100%"><PieChart>
+          <Pie data={stageData} dataKey="lots" nameKey="stage" innerRadius={58} outerRadius={82} paddingAngle={2} stroke="var(--surface)" strokeWidth={2}>
+            {stageData.map((x, i) => <Cell key={x.stage} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+          </Pie>
+          <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 10 }} />
+        </PieChart></ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"><div className="text-2xl font-bold">{fmt(d.lots_total)}</div><div className="text-[11px]" style={{ color: 'var(--muted)' }}>{t('lots total', 'ጠቅላላ ሎቶች')}</div></div>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-2">{stageData.map((x, i) => <span key={x.stage} className="inline-flex items-center gap-1.5 text-[11px] rounded-full px-2 py-0.5" style={{ background: 'var(--surface2)' }}><span className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />{x.stage} · <b>{x.lots}</b></span>)}</div>
+      </Section>
+    </div>
+
+    {/* ——— Site comparison + decision signals ——— */}
+    <div className="grid xl:grid-cols-3 gap-4 mb-4">
+      <Section className="xl:col-span-2" title={t('Site Comparison', 'የጣቢያዎች ንጽጽር')} sub={t('Collected kg (bars) against average quality score (line) per site', 'የተሰበሰበ ኪ.ግ (አምዶች) ከአማካይ የጥራት ነጥብ (መስመር) ጋር በጣቢያ')}>
+        {siteData.length ? <div className="h-60"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={siteData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+          <XAxis dataKey="code" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+          <YAxis yAxisId="kg" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+          <YAxis yAxisId="q" orientation="right" domain={[60, 100]} tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+          <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 10 }} formatter={(v: any, name: any) => name === 'kg' ? [`${fmt(v)} kg`, t('Collected', 'ተሰብስቧል')] : [fmt(v, 2), t('Avg quality', 'አማካይ ጥራት')]} />
+          <Bar yAxisId="kg" dataKey="kg" fill="#d97706" radius={[6, 6, 0, 0]} maxBarSize={54} />
+          <Line yAxisId="q" type="monotone" dataKey="quality" stroke="#65a30d" strokeWidth={2.4} dot={{ r: 4 }} />
+        </ComposedChart></ResponsiveContainer></div>
+        : <p className="text-sm" style={{ color: 'var(--muted)' }}>{t('Loading site performance…', 'የጣቢያ አፈጻጸም በመጫን ላይ…')}</p>}
+      </Section>
+      <Section title={t('Decision Signals', 'የውሳኔ ምልክቶች')} sub={t('What needs management attention today', 'ዛሬ የአመራር ትኩረት የሚያስፈልጋቸው')}>
+        <div className="space-y-3">
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface2)' }}><div className="flex items-center gap-2 text-sm font-semibold"><TrendingUp size={16} style={{ color: '#d97706' }} />{t('Top supplying site', 'ምርጥ አቅራቢ ጣቢያ')}</div><div className="text-xl font-bold mt-1">{d.top_station_code ?? '—'} · {fmt(d.top_station_kg)} kg</div><div className="text-[11px]" style={{ color: 'var(--muted)' }}>{t('Largest contributor to this season’s intake', 'የወቅቱን መቀበያ ትልቁን ድርሻ ያበረከተ')}</div></div>
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface2)' }}><div className="flex items-center gap-2 text-sm font-semibold"><Users size={16} style={{ color: '#0ea5e9' }} />{t('Supply-base health', 'የአቅራቢ መሰረት ጤና')}</div><div className="text-xl font-bold mt-1">{d.active_farmers ?? 0} / {fmt(d.farmers)} {t('farmers delivering', 'ገበሬዎች እያቀረቡ')}</div><div className="text-[11px]" style={{ color: 'var(--muted)' }}>{d.active_farmer_pct}% {t('of the registered base supplied coffee', 'ከተመዘገበው መሰረት ቡና አቅርበዋል')}</div></div>
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface2)' }}><div className="flex items-center gap-2 text-sm font-semibold"><Warehouse size={16} style={{ color: '#65a30d' }} />{t('Unallocated stock', 'ያልተመደበ ክምችት')}</div><div className="text-xl font-bold mt-1">{fmt(Math.max(0, stock - committed))} kg</div><div className="text-[11px]" style={{ color: 'var(--muted)' }}>{t('Available to promise against new contracts', 'ለአዳዲስ ውሎች ለመስጠት ዝግጁ')}</div></div>
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface2)' }}><div className="flex items-center gap-2 text-sm font-semibold"><Cherry size={16} style={{ color: '#e11d48' }} />{t('Registered farmers', 'የተመዘገቡ ገበሬዎች')}</div><div className="text-xl font-bold mt-1">{fmt(d.farmers)}</div><div className="text-[11px]" style={{ color: 'var(--muted)' }}>{t('Outgrower registry across all sites', 'በሁሉም ጣቢያዎች ላይ ያለ አቅራቢ መዝገብ')}</div></div>
+        </div>
+      </Section>
+    </div>
+
+    <Section title={t('Executive Financial & Contract Summary (snapshots)', 'የአስፈጻሚ ፋይናንስ እና የውል ማጠቃለያ (ቅጽበታዊ)')}><T state={snapshotsQ} rows={snapshots} cols={[['snapshot_date', 'Date'], ['cherry_procured_kg', 'Cherry kg'], ['warehouse_stock_kg', 'Stock kg'], ['cash_float_balance', 'Cash float'], ['landed_cost_per_kg', 'Landed cost/kg'], ['export_containers_open', 'Containers']]} /></Section>
   </div>)
 }
 

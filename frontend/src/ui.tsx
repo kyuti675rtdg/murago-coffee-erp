@@ -110,11 +110,11 @@ export function T({ rows, cols, state, pageSize = 15, searchPlaceholder, onRowCl
 }
 
 /* ---------------- layout primitives ---------------- */
-export function Section({ title, sub, children, action }: any) {
+export function Section({ title, sub, children, action, className }: any) {
   const { lang } = useLang()
   const tt = typeof title === 'string' ? tr(lang, title) : title
   const ss = typeof sub === 'string' ? tr(lang, sub) : sub
-  return (<section className="card mb-4">
+  return (<section className={`card mb-4 ${className ?? ''}`}>
     <div className="flex flex-wrap items-start gap-2">
       <div className="flex-1 min-w-[200px]"><h3 className="font-bold" style={{ color: 'var(--text)' }}>{tt}</h3>
         {ss && <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{ss}</p>}</div>
