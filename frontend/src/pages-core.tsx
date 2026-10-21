@@ -295,21 +295,107 @@ export function Farmers({ view = 'all' }: { view?: string } = {}) {
 }
 
 
+function IntakeReceipt({ receipt, onClose }: { receipt: any; onClose: () => void }) {
+  const t = useT()
+  const [qr, setQr] = useState('')
+  useEffect(() => {
+    let live = true
+    import('qrcode').then((m) => m.default.toDataURL(JSON.stringify({
+      sys: 'MURAGO-ERP', receipt: receipt.qr_receipt_code, intake: receipt.intake_number,
+      farmer: receipt.farmer_code, date: receipt.intake_date,
+      payable_kg: receipt.payable_kg, amount_etb: receipt.total_amount,
+    }), { width: 240, margin: 1 }).then((url: string) => { if (live) setQr(url) })).catch(() => {})
+    return () => { live = false }
+  }, [receipt])
+  const fmt = (v: any, dec = 2) => Number(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })
+  const rows: [string, string][] = [
+    [t('Receipt No', 'የደረሰኝ ቁጥር'), receipt.intake_number],
+    [t('Date', 'ቀን'), receipt.intake_date],
+    [t('Farmer', 'ገበሬ'), `${receipt.farmer_code ?? ''} — ${receipt.farmer_name ?? ''}`],
+    [t('Collection Center', 'የመሰብሰቢያ ማዕከል'), receipt.center_name ?? ''],
+    [t('Station', 'ጣቢያ'), receipt.station_name ?? ''],
+    [t('Coffee Variety', 'የቡና ዝርያ'), receipt.coffee_variety || '—'],
+    [t('Gross Weight', 'ጠቅላላ ክብደት'), `${fmt(receipt.gross_kg)} kg`],
+    [t('Tare', 'የእቃ ክብደት'), `${fmt(receipt.tare_kg)} kg`],
+    [t('Net Weight', 'የተጣራ ክብደት'), `${fmt(receipt.net_kg)} kg`],
+    [t('Floatation Deduction', 'የመንሳፈፍ ቅናሽ'), `${fmt(receipt.floater_deduction_pct)}%`],
+    [t('Unit Price', 'የአንዱ ዋጋ'), `ETB ${fmt(receipt.unit_price)} / kg`],
+  ]
+  return (<div className="fixed inset-0 z-[80] flex items-center justify-center p-3 overflow-auto" style={{ background: 'rgba(0,0,0,0.72)' }} onClick={onClose}>
+    <div className="w-full max-w-lg my-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="print-area rounded-2xl p-5 sm:p-6" style={{ background: '#fff', color: '#1c1917' }}>
+        <div className="flex items-start justify-between gap-3 pb-3" style={{ borderBottom: '2px solid #d97706' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl" style={{ background: '#d97706', color: '#fff' }}><Coffee size={20} /></span>
+            <div>
+              <div className="font-extrabold tracking-wide text-[15px]">MURAGO COFFEE PROCESSING PLC</div>
+              <div className="text-[11px]" style={{ color: '#57534e' }}>{receipt.station_name} · Bean Power Coffee</div>
+            </div>
+          </div>
+          <div className="text-right">
+            {qr ? <img src={qr} alt="Receipt QR code" className="w-[92px] h-[92px]" /> : <div className="w-[92px] h-[92px] rounded" style={{ background: '#f5f5f4' }} />}
+            <div className="text-[9px] font-mono mt-0.5" style={{ color: '#57534e' }}>{receipt.qr_receipt_code}</div>
+          </div>
+        </div>
+        <div className="text-center font-bold text-sm tracking-wide mt-3">{t('CHERRY INTAKE RECEIPT', 'የቼሪ መቀበያ ደረሰኝ')}</div>
+        <div className="mt-3 space-y-1.5">
+          {rows.map(([l, v]) => <div key={l} className="flex justify-between text-[13px]"><span style={{ color: '#57534e' }}>{l}</span><b className="text-right">{v}</b></div>)}
+        </div>
+        <div className="rounded-xl mt-4 px-4 py-3 flex items-center justify-between" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+          <div><div className="text-[11px]" style={{ color: '#9a3412' }}>{t('PAYABLE WEIGHT', 'የሚከፈል ክብደት')}</div><div className="text-lg font-extrabold">{fmt(receipt.payable_kg)} kg</div></div>
+          <div className="text-right"><div className="text-[11px]" style={{ color: '#9a3412' }}>{t('TOTAL AMOUNT', 'ጠቅላላ መጠን')}</div><div className="text-lg font-extrabold">ETB {fmt(receipt.total_amount)}</div></div>
+        </div>
+        <div className="grid grid-cols-2 gap-6 mt-6 text-[11px]" style={{ color: '#57534e' }}>
+          <div><div className="pt-4" style={{ borderTop: '1px solid #a8a29e' }}>{t('Weighbridge Clerk — signature', 'የመለኪያ ሠራተኛ — ፊርማ')}</div></div>
+          <div><div className="pt-4" style={{ borderTop: '1px solid #a8a29e' }}>{t('Farmer — signature', 'ገበሬ — ፊርማ')}</div></div>
+        </div>
+        <p className="text-[10px] text-center mt-4" style={{ color: '#78716c' }}>{t('Verify this receipt in the Murago ERP — Collection → Daily Cherry Intake. Keep your copy safe; payment is made against this receipt.', 'ይህን ደረሰኝ በሙራጎ ERP ውስጥ ያረጋግጡ — መቀበያ → የዕለት ቼሪ መቀበያ። ቅጂዎን በጥንቃቄ ያስቀምጡ፤ ክፍያ በዚህ ደረሰኝ ይከናወናል።')}</p>
+      </div>
+      <div className="no-print flex gap-2 mt-3">
+        <button className="btn flex-1 justify-center !py-2.5" onClick={() => window.print()}>🖨 {t('Print Receipt', 'ደረሰኝ አትም')}</button>
+        <button className="btn-ghost flex-1 justify-center !py-2.5" style={{ background: 'rgba(255,255,255,0.92)' }} onClick={onClose}>{t('Record Another Intake', 'ሌላ መቀበያ መዝግብ')}</button>
+      </div>
+    </div>
+  </div>)
+}
+
+
 export function Collection({ view = 'all' }: { view?: string } = {}) {
   const t = useT()
   const centers = useList('/collection-centers/'); const agents = useList('/agent-assignments/')
   const intakes = useList('/cherry-intakes/'); const farmers = useList('/farmers/')
+  const stationsList = useList('/stations/')
   const toast = useToast(); const qc = useQueryClient()
+  const [receipt, setReceipt] = useState<any>(null)
   const [f, setF] = useState<any>({ intake_number: '', farmer: '', center: '', station: '', intake_date: new Date().toISOString().slice(0, 10), coffee_variety: 'Heirloom', gross_kg: 0, tare_kg: 0, floater_deduction_pct: 0, unit_price: 85, qr_receipt_code: '' })
   const net = Math.max(0, (Number(f.gross_kg) || 0) - (Number(f.tare_kg) || 0))
   const payable = net * (1 - (Number(f.floater_deduction_pct) || 0) / 100)
-  const create = useMutation({ mutationFn: () => post('/cherry-intakes/', { ...f, qr_receipt_code: f.qr_receipt_code || `QR-${f.intake_number}` }), onSuccess: (d: any) => { toast(`${t('Intake saved', 'መቀበያ ተቀምጧል')} — ${t('net', 'የተጣራ')} ${d.net_kg} ${t('kg', 'ኪ.ግ')}, ${t('payable', 'የሚከፈል')} ${d.payable_kg} ${t('kg', 'ኪ.ግ')}, ${t('total', 'ጠቅላላ')} ${d.total_amount} ETB · QR: ${d.qr_receipt_code}`); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  const openReceipt = (d: any) => {
+    const farmer = farmers.rows.find((x: any) => x.id === d.farmer)
+    const center = centers.rows.find((x: any) => x.id === d.center)
+    const station = stationsList.rows.find((x: any) => x.id === d.station)
+    setReceipt({ ...d, farmer_code: farmer?.farmer_code ?? '', farmer_name: farmer?.full_name ?? '',
+      center_name: center?.name ?? '', station_name: station ? `${station.code} — ${station.name}` : '' })
+  }
+  const onFarmer = (farmerId: string) => {
+    const farmer = farmers.rows.find((x: any) => x.id === farmerId)
+    setF({ ...f, farmer: farmerId, station: farmer?.station || f.station, coffee_variety: farmer?.coffee_variety || f.coffee_variety })
+  }
+  const create = useMutation({
+    mutationFn: () => {
+      const payload: any = { ...f }
+      if (!payload.intake_number) delete payload.intake_number
+      if (!payload.qr_receipt_code) delete payload.qr_receipt_code
+      return post('/cherry-intakes/', payload)
+    },
+    onSuccess: (d: any) => { toast(`${t('Intake saved', 'መቀበያ ተቀምጧል')} — ${d.intake_number}`); openReceipt(d); setF({ ...f, intake_number: '', qr_receipt_code: '', gross_kg: 0, tare_kg: 0 }); qc.invalidateQueries() },
+    onError: (e: any) => toast(errMsg(e), false) })
   return (<div>
     {((view === 'all' || view === 'centers') && (<Section title="Collection Center & Agent Assignment"><T state={centers} rows={centers.rows} cols={[['code', 'Code'], ['name', 'Center'], ['altitude_m', 'Altitude m'], ['is_active', 'Active']]} /><h4 className="font-semibold text-sm mt-3">{t('Field purchasing agent assignments', 'የመስክ ግዥ ወኪል ምደባዎች')}</h4><T state={agents} rows={agents.rows} cols={[['valid_from','Valid from'],['valid_to','Valid to']]} /></Section>))}
     {((view === 'all' || view === 'intake') && (<Section title="Daily Cherry Intake & Scale Terminal — Weighbridge" sub="net = gross − tare · payable = net − floatation deduction · QR intake receipt issued on save">
       <div className="grid md:grid-cols-4 gap-2">
-        <Field label="Intake #"><input className="inp" value={f.intake_number} onChange={(e) => setF({ ...f, intake_number: e.target.value })} placeholder="INT-2026-0002" /></Field>
-        <Field label="Farmer"><select className="inp" value={f.farmer} onChange={(e) => setF({ ...f, farmer: e.target.value })}><option value="">{t('Select…', 'ምረጥ…')}</option>{farmers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.farmer_code} — {x.full_name}</option>)}</select></Field>
+        <Field label={t('Intake # (auto if blank)', 'የመቀበያ ቁጥር (ባዶ ከሆነ በራስ-ሰር)')}><input className="inp" value={f.intake_number} onChange={(e) => setF({ ...f, intake_number: e.target.value })} placeholder="INT-2026-…" /></Field>
+        <Field label="Farmer"><select className="inp" value={f.farmer} onChange={(e) => onFarmer(e.target.value)}><option value="">{t('Select…', 'ምረጥ…')}</option>{farmers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.farmer_code} — {x.full_name}</option>)}</select></Field>
         <Field label="Center"><select className="inp" value={f.center} onChange={(e) => setF({ ...f, center: e.target.value })}><option value="">{t('Select…', 'ምረጥ…')}</option>{centers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
         <Field label="Station"><StationSelect value={f.station} onChange={(v: string) => setF({ ...f, station: v })} /></Field>
         <Field label="Gross (kg)"><input className="inp" type="number" value={f.gross_kg} onChange={(e) => setF({ ...f, gross_kg: e.target.value })} /></Field>
@@ -317,9 +403,12 @@ export function Collection({ view = 'all' }: { view?: string } = {}) {
         <Field label="Floatation deduction %"><input className="inp" type="number" value={f.floater_deduction_pct} onChange={(e) => setF({ ...f, floater_deduction_pct: e.target.value })} /></Field>
         <Field label="Unit price (ETB/kg)"><input className="inp" type="number" value={f.unit_price} onChange={(e) => setF({ ...f, unit_price: e.target.value })} /></Field>
       </div>
-      <div className="flex flex-wrap gap-4 mt-3 text-sm"><span>{t('Net', 'የተጣራ')}: <b>{net.toFixed(2)} {t('kg', 'ኪ.ግ')}</b></span><span>{t('Payable', 'የሚከፈል')}: <b>{payable.toFixed(2)} {t('kg', 'ኪ.ግ')}</b></span><span>{t('Total', 'ጠቅላላ')}: <b>{(payable * (Number(f.unit_price) || 0)).toFixed(2)} ETB</b></span>
-        <button className="btn" onClick={() => create.mutate()}>{t('Record intake + print QR receipt', 'መቀበያ መዝግብ + የQR ደረሰኝ አትም')}</button></div>
-      <div className="mt-3"><T state={intakes} rows={intakes.rows} cols={[['intake_number', 'Intake #'], ['intake_date', 'Date'], ['gross_kg', 'Gross'], ['tare_kg', 'Tare'], ['net_kg', 'Net'], ['payable_kg', 'Payable'], ['total_amount', 'Total ETB'], ['qr_receipt_code', 'QR receipt']]} /></div>
+      <div className="flex flex-wrap items-center gap-4 mt-3 text-sm"><span>{t('Net', 'የተጣራ')}: <b>{net.toFixed(2)} {t('kg', 'ኪ.ግ')}</b></span><span>{t('Payable', 'የሚከፈል')}: <b>{payable.toFixed(2)} {t('kg', 'ኪ.ግ')}</b></span><span>{t('Total', 'ጠቅላላ')}: <b>{(payable * (Number(f.unit_price) || 0)).toFixed(2)} ETB</b></span>
+        <button className="btn" disabled={!f.farmer || !f.center || !f.station || !(Number(f.gross_kg) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Record intake + print QR receipt', 'መቀበያ መዝግብ + የQR ደረሰኝ አትም')}</button>
+        {(!f.farmer || !f.center || !f.station || !(Number(f.gross_kg) > 0)) && <span className="text-xs" style={{ color: 'var(--muted)' }}>{t('Select farmer, center and station, then enter the gross weight.', 'ገበሬ፣ ማዕከል እና ጣቢያ ይምረጡ፣ ከዚያ ጠቅላላ ክብደት ያስገቡ።')}</span>}</div>
+      <div className="mt-3"><T state={intakes} rows={intakes.rows} cols={[['intake_number', 'Intake #'], ['intake_date', 'Date'], ['gross_kg', 'Gross'], ['tare_kg', 'Tare'], ['net_kg', 'Net'], ['payable_kg', 'Payable'], ['total_amount', 'Total ETB'], ['qr_receipt_code', 'QR receipt'], ['receipt', t('Receipt', 'ደረሰኝ')]]}
+        renderCell={(r: any, k: string) => k === 'receipt' ? <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => openReceipt(r)}>🧾 {t('Print', 'አትም')}</button> : undefined} /></div>
+      {receipt && <IntakeReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </Section>))}</div>)
 }
 

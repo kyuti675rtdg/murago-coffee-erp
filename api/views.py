@@ -570,6 +570,43 @@ class JournalLineViewSet(StationScopedViewSet):
         super().perform_destroy(instance)
 
 
+class CherryIntakeViewSet(StationScopedViewSet):
+    """Weighbridge intake: the operator's form sends only what is typed at
+    the scale (farmer, center, station, date, weights, price). The server
+    computes net kg and auto-generates the unique intake number and QR
+    receipt code, so recording an intake can never 400 on computed fields."""
+
+    model = collection_m.CherryIntake
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        gross = Decimal(str(data.get("gross_kg") or 0))
+        tare = Decimal(str(data.get("tare_kg") or 0))
+        if data.get("net_kg") in (None, ""):
+            data["net_kg"] = str(gross - tare)
+        if data.get("payable_kg") in (None, ""):
+            data["payable_kg"] = "0"
+        if data.get("total_amount") in (None, ""):
+            data["total_amount"] = "0"
+        if not data.get("intake_number"):
+            year = str(data.get("intake_date") or "")[:4] or "2026"
+            prefix = f"INT-{year}-"
+            n = collection_m.CherryIntake.objects.filter(
+                intake_number__startswith=prefix).count() + 1
+            candidate = f"{prefix}{n:04d}"
+            while collection_m.CherryIntake.objects.filter(intake_number=candidate).exists():
+                n += 1
+                candidate = f"{prefix}{n:04d}"
+            data["intake_number"] = candidate
+        if not data.get("qr_receipt_code"):
+            data["qr_receipt_code"] = f"QR-{data['intake_number']}"
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
 class PurchaseVoucherViewSet(StationScopedViewSet):
     model = procurement_m.PurchaseVoucher
 
@@ -1077,6 +1114,7 @@ CUSTOM_VIEWSETS = {
     "journal-lines": JournalLineViewSet, "purchase-vouchers": PurchaseVoucherViewSet,
     "stock-audits": StockAuditViewSet, "containers": ContainerViewSet,
     "farmers": FarmerViewSet, "bonus-calculations": BonusCalculationViewSet,
+    "cherry-intakes": CherryIntakeViewSet,
 }
 
 

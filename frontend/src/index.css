@@ -133,3 +133,12 @@ body { background: var(--bg); color: var(--text); -webkit-font-smoothing: antial
 [data-theme="dark"] .leaflet-container { background: var(--surface-2); }
 [data-theme="dark"] .recharts-cartesian-axis-tick text { fill: var(--muted); }
 [data-theme="dark"] .recharts-tooltip-cursor { fill: var(--surface-3); }
+
+/* Print: only the receipt (.print-area) is printed — used by the intake
+   QR receipt and any future printable document. */
+@media print {
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { position: fixed !important; left: 0 !important; top: 0 !important; width: 100% !important; max-height: none !important; overflow: visible !important; box-shadow: none !important; border-radius: 0 !important; }
+  .no-print { display: none !important; }
+}
