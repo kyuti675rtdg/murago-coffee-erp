@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import muragoLogo from './assets/murago-logo.png'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, post, queueOffline, queuedRecords, clearQueued, uuidv7 } from './api'
 import { Badge, Field, Section, StationSelect, T, UserSelect, errMsg, useList, useToast } from './ui'
@@ -326,7 +327,7 @@ function IntakeReceipt({ receipt, onClose }: { receipt: any; onClose: () => void
       <div className="print-area rounded-2xl p-5 sm:p-6" style={{ background: '#fff', color: '#1c1917' }}>
         <div className="flex items-start justify-between gap-3 pb-3" style={{ borderBottom: '2px solid #d97706' }}>
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl" style={{ background: '#d97706', color: '#fff' }}><Coffee size={20} /></span>
+            <img src={muragoLogo} alt="Murago Coffee" className="h-[52px] w-auto" />
             <div>
               <div className="font-extrabold tracking-wide text-[15px]">MURAGO COFFEE PROCESSING PLC</div>
               <div className="text-[11px]" style={{ color: '#57534e' }}>{receipt.station_name} · Bean Power Coffee</div>
