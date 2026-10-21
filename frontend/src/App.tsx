@@ -299,7 +299,9 @@ export default function App() {
   if (!user) return <ToastCtx.Provider value={toast}><Login />{toastEl(toastState)}</ToastCtx.Provider>
 
   const roles: string[] = user.role_codes ?? []
-  const leaf = LEAF_BY_ID[page] && canSee(LEAF_BY_ID[page], roles) ? LEAF_BY_ID[page] : LEAF_BY_ID['dashboard']
+  const requestedLeaf = LEAF_BY_ID[page]
+  const accessDenied = !!requestedLeaf && !canSee(requestedLeaf, roles)
+  const leaf = requestedLeaf && !accessDenied ? requestedLeaf : LEAF_BY_ID['dashboard']
   const Active = pageComponent(leaf)
   return (<ToastCtx.Provider value={toast}>
     <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
@@ -323,7 +325,17 @@ export default function App() {
         <main className="flex-1 min-w-0 p-3 md:p-5 max-w-[1600px] w-full mx-auto">
           <PageHeader title={lang === 'am' ? (leaf.labelAm ?? leaf.label) : leaf.label} subtitle={lang === 'am' ? (leaf.subtitleAm ?? leaf.subtitle) : leaf.subtitle} />
           <Suspense fallback={<div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-28 w-full" />)}</div>}>
-            <Active key={leaf.id} />
+            {accessDenied ? (
+              <div className="card p-6 sm:p-8 max-w-xl mx-auto mt-8 text-center">
+                <div className="text-4xl mb-3" aria-hidden>🔒</div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>{t('Access restricted', 'መዳረሻ የተገደበ')}</h2>
+                <p className="text-sm mt-2" style={{ color: 'var(--muted)' }}>
+                  {t(`Your role does not include the “${requestedLeaf.label}” module. The sidebar shows only the modules your role is authorized for — if you need access, ask your system administrator.`,
+                     `የእርስዎ ሚና “${requestedLeaf.labelAm ?? requestedLeaf.label}” ሞዱልን አያካትትም። የጎን አሞሌ የሚናዎ ፈቃድ ያላቸውን ሞዱሎች ብቻ ያሳያል — መዳረሻ ከፈልጉ የሲስተም አስተዳዳሪዎን ይጠይቁ።`)}
+                </p>
+                <button className="btn mt-4" onClick={() => go('dashboard')}>{t('Go to Dashboard', 'ወደ ዳሽቦርድ ሂድ')}</button>
+              </div>
+            ) : <Active key={leaf.id} />}
           </Suspense>
         </main>
         <footer className="px-5 py-3 text-[11px] flex flex-wrap gap-2 items-center" style={{ color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>

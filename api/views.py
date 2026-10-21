@@ -8,13 +8,15 @@ from django.db import models as dj_models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
+from django.db import transaction
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from core.models import AuditLog
 from core.signoff import SignOffError, record_dual_signoff
-from .permissions import RolePermission, user_station_ids
+from .permissions import RolePermission, can_read, can_write, is_admin, user_role_codes, user_station_ids
 from .serializers import serializer_for
 
 User = get_user_model()
@@ -99,18 +101,49 @@ REGISTRY = [
 MODEL_BY_LABEL = {m._meta.label_lower: m for _, m in REGISTRY}
 
 STATION_PATHS = ["station", "mill_station", "store__station", "center__station",
-                 "sheet__station", "lot__station", "period__station", "from_station"]
+                 "sheet__station", "lot__station", "period__station", "from_station",
+                 "farmer__station", "container__station", "waybill__lot__station",
+                 "voucher__station", "work_order__mill_station", "grading__lot__station",
+                 "marking__lot__station", "parent_lot__station"]
 
 
 def _station_filter(qs, model, station_ids):
     if station_ids is None:
         return qs
+    # Disbursements hang off any of three station-bearing parents — a record
+    # is in scope when ANY of them is (a plain __in on one path would hide
+    # the others behind NULL foreign keys).
+    if model._meta.label_lower == "payments.disbursement":
+        return qs.filter(dj_models.Q(voucher__station__in=station_ids)
+                         | dj_models.Q(payroll_period__station__in=station_ids)
+                         | dj_models.Q(farmer__station__in=station_ids))
+    if model._meta.label_lower == "traceability.lotlineage":
+        return qs.filter(dj_models.Q(parent_lot__station__in=station_ids)
+                         | dj_models.Q(child_lot__station__in=station_ids))
+    if model._meta.label_lower == "core.station":
+        return qs.filter(id__in=station_ids)  # a station row IS its own scope
     field_names = {f.name for f in model._meta.get_fields() if hasattr(f, "name")}
     for path in STATION_PATHS:
         head = path.split("__")[0]
         if head in field_names:
             return qs.filter(**{f"{path}__in": station_ids})
     return qs
+
+
+_INSTANCE_STATION_PATHS = STATION_PATHS + ["payroll_period__station"]
+
+
+def _instance_station_id(obj):
+    """Resolve the station an instance belongs to by walking the scope paths."""
+    for path in _INSTANCE_STATION_PATHS:
+        cur = obj
+        for part in path.split("__"):
+            cur = getattr(cur, part, None)
+            if cur is None:
+                break
+        if cur is not None:
+            return getattr(cur, "id", cur)
+    return None
 
 
 class StationScopedViewSet(viewsets.ModelViewSet):
@@ -136,16 +169,31 @@ class StationScopedViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
+    def _check_scope(self, obj):
+        """Reject writes whose record belongs to a station outside the
+        caller's scope — closes the 'post another station's ids' bypass."""
+        ids = user_station_ids(self.request.user)
+        if ids is None:
+            return
+        sid = _instance_station_id(obj)
+        if sid is not None and sid not in ids:
+            raise PermissionDenied(
+                "This record belongs to a station outside your assigned scope.")
+
     def perform_create(self, serializer):
-        obj = serializer.save()
-        if hasattr(obj, "created_by") and not obj.created_by_id:
-            obj.created_by = self.request.user
-            obj.save(update_fields=["created_by"])
-        self._audit("create", obj)
+        with transaction.atomic():
+            obj = serializer.save()
+            self._check_scope(obj)
+            if hasattr(obj, "created_by") and not obj.created_by_id:
+                obj.created_by = self.request.user
+                obj.save(update_fields=["created_by"])
+            self._audit("create", obj)
 
     def perform_update(self, serializer):
-        obj = serializer.save()
-        self._audit("update", obj)
+        with transaction.atomic():
+            obj = serializer.save()
+            self._check_scope(obj)
+            self._audit("update", obj)
 
     def perform_destroy(self, instance):
         self._audit("delete", instance)
@@ -729,20 +777,24 @@ def dashboard(request):
     water = resources_m.WaterRegisterEntry.objects.all()
     water = _station_filter(water, resources_m.WaterRegisterEntry, ids)
     contracts = buyers_m.SalesContract.objects.exclude(status="cancelled")
-    committed_kg = sum((a.allocated_kg for a in buyers_m.ContractLotAllocation.objects.all()), Decimal("0"))
-    stock_kg = warehouse_m.StockLedgerEntry.objects.all()
+    committed_kg = sum((a.allocated_kg for a in _station_filter(
+        buyers_m.ContractLotAllocation.objects.all(), buyers_m.ContractLotAllocation, ids)), Decimal("0"))
+    stock_kg = _station_filter(warehouse_m.StockLedgerEntry.objects.all(),
+                               warehouse_m.StockLedgerEntry, ids)
     latest_stock = sum((e.balance_kg for e in stock_kg), Decimal("0"))
     return Response({
         "lots_total": lots.count(), "lots_by_stage": by_stage,
-        "cherry_procured_kg": str(sum((i.payable_kg for i in collection_m.CherryIntake.objects.all()), Decimal("0"))),
+        "cherry_procured_kg": str(sum((i.payable_kg for i in _station_filter(
+            collection_m.CherryIntake.objects.all(), collection_m.CherryIntake, ids)), Decimal("0"))),
         "warehouse_stock_kg": str(latest_stock),
         "open_contracts": contracts.count(), "committed_kg": str(committed_kg),
         "fuel_entries": fuel.count(), "fuel_anomalies": fuel.filter(is_anomaly=True).count(),
         "water_entries": water.count(), "water_anomalies": water.filter(is_anomaly=True).count(),
         "avg_fuel_ratio": str(fuel.exclude(fuel_ratio=None).aggregate(a=dj_models.Avg("fuel_ratio"))["a"] or ""),
         "avg_water_ratio": str(water.exclude(water_ratio=None).aggregate(a=dj_models.Avg("water_ratio"))["a"] or ""),
-        "farmers": farmers_m.Farmer.objects.count(),
-        "containers_open": exports_m.ContainerLoading.objects.exclude(status="shipped").count(),
+        "farmers": _station_filter(farmers_m.Farmer.objects.all(), farmers_m.Farmer, ids).count(),
+        "containers_open": _station_filter(exports_m.ContainerLoading.objects.exclude(status="shipped"),
+                                           exports_m.ContainerLoading, ids).count(),
         **_management_insights(ids),
         **_dashboard_analytics(ids),
     })
@@ -806,21 +858,39 @@ def _management_insights(ids):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def run_report(request):
-    """BI report runner (Module 20): computes real aggregates by kind."""
+    """BI report runner (Module 20): computes real aggregates by kind.
+    Restricted to BI reader roles; aggregates are station-scoped."""
+    from .permissions import READ_MATRIX
+    if not is_admin(request.user) and not (user_role_codes(request.user) & READ_MATRIX["bi"]):
+        return _err("Your role does not permit running reports.", status.HTTP_403_FORBIDDEN)
     kind = request.data.get("kind", "procurement")
     station_id = request.data.get("station")
+    ids = user_station_ids(request.user)
+    if station_id and ids is not None:
+        from uuid import UUID
+        try:
+            if UUID(str(station_id)) not in ids:
+                return _err("This station is outside your assigned scope.", status.HTTP_403_FORBIDDEN)
+        except (ValueError, AttributeError):
+            return _err("Invalid station id.", status.HTTP_400_BAD_REQUEST)
+
+    def scoped(model):
+        qs = _station_filter(model.objects.all(), model, ids)
+        if station_id and "station" in {f.name for f in model._meta.get_fields() if hasattr(f, "name")}:
+            qs = qs.filter(station_id=station_id)
+        return qs
     qs_map = {
-        "procurement": lambda: {"intakes": collection_m.CherryIntake.objects.count(),
-                                "payable_kg": str(sum((i.payable_kg for i in collection_m.CherryIntake.objects.all()), Decimal("0")))},
-        "yields": lambda: {"lots": processing_m.Lot.objects.count(),
-                           "cherry_kg": str(sum((l.cherry_kg for l in processing_m.Lot.objects.all()), Decimal("0"))),
-                           "green_kg": str(sum((l.green_kg for l in processing_m.Lot.objects.all()), Decimal("0")))},
-        "efficiency": lambda: {"fuel_anomalies": resources_m.FuelRegisterEntry.objects.filter(is_anomaly=True).count(),
-                               "water_anomalies": resources_m.WaterRegisterEntry.objects.filter(is_anomaly=True).count()},
-        "quality": lambda: {"cuppings": quality_m.CuppingScore.objects.count(),
-                            "approvals": quality_m.QualityApproval.objects.filter(decision="approved").count()},
-        "stock": lambda: {"stores": warehouse_m.Store.objects.count(),
-                          "ledger_entries": warehouse_m.StockLedgerEntry.objects.count()},
+        "procurement": lambda: {"intakes": scoped(collection_m.CherryIntake).count(),
+                                "payable_kg": str(sum((i.payable_kg for i in scoped(collection_m.CherryIntake)), Decimal("0")))},
+        "yields": lambda: {"lots": scoped(processing_m.Lot).count(),
+                           "cherry_kg": str(sum((l.cherry_kg for l in scoped(processing_m.Lot)), Decimal("0"))),
+                           "green_kg": str(sum((l.green_kg for l in scoped(processing_m.Lot)), Decimal("0")))},
+        "efficiency": lambda: {"fuel_anomalies": scoped(resources_m.FuelRegisterEntry).filter(is_anomaly=True).count(),
+                               "water_anomalies": scoped(resources_m.WaterRegisterEntry).filter(is_anomaly=True).count()},
+        "quality": lambda: {"cuppings": scoped(quality_m.CuppingScore).count(),
+                            "approvals": scoped(quality_m.QualityApproval).filter(decision="approved").count()},
+        "stock": lambda: {"stores": scoped(warehouse_m.Store).count(),
+                          "ledger_entries": scoped(warehouse_m.StockLedgerEntry).count()},
     }
     fn = qs_map.get(kind)
     if not fn:
@@ -833,7 +903,14 @@ def run_report(request):
 @permission_classes([IsAuthenticated])
 def lot_costing(request, lot_id):
     from finance.models import lot_landed_cost_per_kg
+    roles = user_role_codes(request.user)
     lot = get_object_or_404(processing_m.Lot, pk=lot_id)
+    if not ("admin" in roles or roles & {"finance_manager", "finance_officer"}):
+        ids = user_station_ids(request.user)
+        if not (roles & {"site_manager", "station_supervisor"} and ids is not None
+                and lot.station_id in ids):
+            return _err("Lot costing is restricted to finance roles and the lot's own site managers.",
+                        status.HTTP_403_FORBIDDEN)
     per_kg = lot_landed_cost_per_kg(lot)
     allocs = finance_m.LotCostAllocation.objects.filter(lot=lot)
     return Response({"lot": lot.lot_code, "landed_cost_per_kg": str(per_kg) if per_kg is not None else None,
@@ -844,6 +921,8 @@ def lot_costing(request, lot_id):
 @permission_classes([IsAuthenticated])
 def postgis_status(request):
     """Live PostGIS verification: CREATE EXTENSION IF NOT EXISTS + postgis_version()."""
+    if not is_admin(request.user):
+        return Response({"detail": "Admin role required."}, status=403)
     from django.db import connection
     try:
         with connection.cursor() as cur:
@@ -881,10 +960,32 @@ def sync_push(request):
         if not created:
             acks.append({"client_uuid": str(client_uuid), "status": "duplicate", "queue_id": str(item.id)})
             continue
-        # Attempt domain upsert for known entity types.
+        # Attempt domain upsert for known entity types — but only when the
+        # caller's role may WRITE that model and the record sits inside the
+        # caller's station scope. Sync is not a permission bypass.
         model = MODEL_BY_LABEL.get((rec.get("entity_type") or "").lower())
         outcome = "queued"
+        if model is not None and not can_write(request.user, model):
+            acks.append({"client_uuid": str(client_uuid),
+                         "status": f"rejected (role may not write {model._meta.label_lower})"})
+            continue
         if model is not None and rec.get("entity_uuid"):
+            _ids = user_station_ids(request.user)
+            if _ids is not None:
+                _existing = model.objects.filter(pk=rec["entity_uuid"]).first()
+                _sid = _instance_station_id(_existing) if _existing is not None else None
+                if _sid is None and _existing is None:
+                    _raw_station = (rec.get("payload") or {}).get("station")
+                    if _raw_station:
+                        from uuid import UUID
+                        try:
+                            _sid = UUID(str(_raw_station))
+                        except (ValueError, AttributeError):
+                            _sid = None
+                if _sid is not None and _sid not in _ids:
+                    acks.append({"client_uuid": str(client_uuid),
+                                 "status": "rejected (station outside your scope)"})
+                    continue
             existing = model.objects.filter(pk=rec["entity_uuid"]).first()
             payload = {k: v for k, v in (rec.get("payload") or {}).items()
                        if k in {f.name for f in model._meta.get_fields() if hasattr(f, "name")}}
@@ -916,23 +1017,34 @@ def sync_pull(request):
     from django.utils.dateparse import parse_datetime
     since_raw = request.query_params.get("since")
     since = parse_datetime(since_raw) if since_raw else None
+    ids = user_station_ids(request.user)
     items = sync_m.SyncQueueItem.objects.all()
+    if not is_admin(request.user):
+        if user_role_codes(request.user) & {"station_supervisor", "site_manager"}:
+            items = _station_filter(items, sync_m.SyncQueueItem, ids)
+        else:
+            items = items.filter(user=request.user)
     if since:
         items = items.filter(server_received_at__gt=since)
     changes = {}
     for _route, model in REGISTRY:
         if not hasattr(model, "updated_at"):
             continue
-        qs = model.objects.all()
+        if not can_read(request.user, model):
+            continue  # never leak modules the role may not read
+        qs = _station_filter(model.objects.all(), model, ids)
         if since:
             qs = qs.filter(updated_at__gt=since)
         rows = list(qs.order_by("updated_at")[:200])
         if rows:
             changes[model._meta.label_lower] = serializer_for(model)(rows, many=True).data
+    conflicts = []
+    if is_admin(request.user) or user_role_codes(request.user) & {"station_supervisor", "site_manager"}:
+        conflicts = serializer_for(sync_m.SyncConflict)(
+            sync_m.SyncConflict.objects.filter(resolution="unresolved")[:200], many=True).data
     return Response({"since": since_raw, "queue_items": serializer_for(sync_m.SyncQueueItem)(items[:500], many=True).data,
                      "changes": changes,
-                     "conflicts": serializer_for(sync_m.SyncConflict)(
-                         sync_m.SyncConflict.objects.filter(resolution="unresolved")[:200], many=True).data})
+                     "conflicts": conflicts})
 
 
 @api_view(["GET"])
