@@ -148,6 +148,10 @@ class Command(BaseCommand):
             "pricing_basis": "outright", "outright_price": Decimal("5.40"), "incoterm": "FOB",
             "currency": "USD", "status": "signed", "signed_by": admin})
 
+        # 20-farmer demo registry (profiles, history, plans, bonuses) — idempotent
+        from django.core.management import call_command
+        call_command("seed_demo_farmers")
+
         self.stdout.write(self.style.SUCCESS(
             f"Murago demo seed complete: station={station.code} lots={Lot.objects.count()} "
             f"farmers={Farmer.objects.count()} workers={Worker.objects.count()} (idempotent)"))

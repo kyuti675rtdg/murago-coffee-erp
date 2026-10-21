@@ -2,17 +2,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, post, queueOffline, queuedRecords, clearQueued, uuidv7 } from './api'
 import { Badge, Field, Section, StationSelect, T, UserSelect, errMsg, useList, useToast } from './ui'
+import { useT } from './i18n'
+import { FarmerProfile } from './pages-farm'
 import L from 'leaflet'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 const STAGES = ['harvesting_sorting', 'receiving', 'pulping', 'fermenting', 'washing', 'drying', 'conditioning', 'dry_milling', 'bag_marking', 'packing', 'storing', 'exporting']
 export function Dashboard() {
+  const t = useT()
   const q = useQuery({ queryKey: ['dashboard'], queryFn: () => api('/api/dashboard/') })
   const d = q.data
   const snapshotsQ = useList('/dashboard-snapshots/'); const snapshots = snapshotsQ.rows
-  if (!d) return q.isError ? <div className="card text-sm" style={{color:'var(--danger)'}}>Dashboard unavailable: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>Retry</button></div> : <div className="space-y-2">{[0,1,2].map(i=><div key={i} className="skeleton h-20 w-full" />)}</div>
+  if (!d) return q.isError ? <div className="card text-sm" style={{color:'var(--danger)'}}>{t('Dashboard unavailable', 'ዳሽቦርዱ አይገኝም')}: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>{t('Retry', 'እንደገና ሞክር')}</button></div> : <div className="space-y-2">{[0,1,2].map(i=><div key={i} className="skeleton h-20 w-full" />)}</div>
   const stageData = STAGES.map((s) => ({ stage: s.replace(/_/g, ' '), lots: d.lots_by_stage?.[s] ?? 0 }))
-  const kpis: [string, any][] = [['Lots in pipeline', d.lots_total], ['Cherry procured (kg)', d.cherry_procured_kg], ['Warehouse stock (kg)', d.warehouse_stock_kg], ['Open export contracts', d.open_contracts], ['Committed stock (kg)', d.committed_kg], ['Farmers registered', d.farmers], ['Containers open', d.containers_open], ['Avg fuel ratio (L/kg)', String(d.avg_fuel_ratio).slice(0, 7)], ['Avg water ratio (L/kg)', String(d.avg_water_ratio).slice(0, 7)], ['Fuel anomalies', d.fuel_anomalies], ['Water anomalies', d.water_anomalies]]
+  const kpis: [string, any][] = [[t('Lots in pipeline', 'በሂደት ላይ ያሉ ሎቶች'), d.lots_total], [t('Cherry procured (kg)', 'የተገዛ ቼሪ (ኪ.ግ)'), d.cherry_procured_kg], [t('Warehouse stock (kg)', 'የመጋዘን ክምችት (ኪ.ግ)'), d.warehouse_stock_kg], [t('Open export contracts', 'ክፍት የኤክስፖርት ውሎች'), d.open_contracts], [t('Committed stock (kg)', 'የተወሰነ ክምችት (ኪ.ግ)'), d.committed_kg], [t('Farmers registered', 'የተመዘገቡ ገበሬዎች'), d.farmers], [t('Containers open', 'ክፍት ኮንቴይነሮች'), d.containers_open], [t('Avg fuel ratio (L/kg)', 'አማካይ የነዳጅ ሬሽዮ (ሊ/ኪ.ግ)'), String(d.avg_fuel_ratio).slice(0, 7)], [t('Avg water ratio (L/kg)', 'አማካይ የውሃ ሬሽዮ (ሊ/ኪ.ግ)'), String(d.avg_water_ratio).slice(0, 7)], [t('Fuel anomalies', 'የነዳጅ ያልተለመዱ ሁኔታዎች'), d.fuel_anomalies], [t('Water anomalies', 'የውሃ ያልተለመዱ ሁኔታዎች'), d.water_anomalies]]
     return (<div>
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mb-4">{kpis.map(([l, v]) => <div key={l} className="card"><div className="lbl">{l}</div><div className="kpi">{String(v)}</div></div>)}</div>
     <Section title="Station & Pipeline Telemetry — lots by FSM stage" sub="Live Operations Command Center · contract position: committed vs warehouse stock shown above">
@@ -41,74 +44,98 @@ function FarmerMap({ plots }: { plots: any[] }) {
   return <div ref={ref} className="h-72 rounded-xl border border-stone-200 z-0" />
 }
 export function Farmers({ view = 'all' }: { view?: string } = {}) {
+  const t = useT()
   const _q = useList('/farmers/'); const rows = _q.rows
   const plots = useList('/farm-plots/')
   const certs = useList('/certifications/')
   const dds = useList('/eudr-statements/')
   const toast = useToast(); const qc = useQueryClient()
-  const [f, setF] = useState<any>({ farmer_code: '', full_name: '', phone: '', kebele: '', coffee_tree_count: 0, annual_cherry_cap_kg: 0, station: '' })
-  const create = useMutation({ mutationFn: () => post('/farmers/', f), onSuccess: () => { toast('Farmer registered'); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  const [selected, setSelected] = useState<any>(null)
+  const nextCode = useMemo(() => {
+    const nums = rows.map((r: any) => parseInt(String(r.farmer_code).replace(/\D/g, ''), 10)).filter((n: number) => !Number.isNaN(n))
+    return `FRM-2026-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, '0')}`
+  }, [rows])
+  const empty = { farmer_code: '', full_name: '', gender: '', phone: '', national_id_number: '', station: '', kebele: '', family_size: 5, coffee_tree_count: 0, total_plot_ha: 0, annual_cherry_cap_kg: 0, kyc_status: 'pending' }
+  const [f, setF] = useState<any>(empty)
+  const create = useMutation({ mutationFn: () => post('/farmers/', { ...f, farmer_code: f.farmer_code || nextCode }), onSuccess: () => { toast(t('Farmer registered', 'ገበሬ ተመዝግቧል')); setF(empty); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  if (selected) return <FarmerProfile farmerId={selected.id} onBack={() => setSelected(null)} />
   return (<div>
-    {((view === 'all' || view === 'directory') && (<Section title="Farmer Directory & Profile View — Outgrower Registry & KYC" sub="Annual cherry cap (anti-illicit-blending) enforced from registered plot size">
-      <T state={_q} rows={rows} cols={[['farmer_code', 'Farmer ID'], ['full_name', 'Name'], ['phone', 'Phone'], ['kebele', 'Kebele'], ['coffee_tree_count', 'Trees'], ['annual_cherry_cap_kg', 'Cap kg/yr'], ['delivered_this_season_kg', 'Delivered kg'], ['kyc_status', 'KYC']]} />
-      <div className="grid md:grid-cols-4 gap-2 mt-3">
-        <Field label="Farmer ID"><input className="inp" value={f.farmer_code} onChange={(e) => setF({ ...f, farmer_code: e.target.value })} placeholder="FRM-2026-0100" /></Field>
-        <Field label="Full name"><input className="inp" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></Field>
-        <Field label="Station"><StationSelect value={f.station} onChange={(v: string) => setF({ ...f, station: v })} /></Field>
-        <Field label="Annual cap (kg)"><input className="inp" type="number" value={f.annual_cherry_cap_kg} onChange={(e) => setF({ ...f, annual_cherry_cap_kg: e.target.value })} /></Field>
-      </div><button className="btn mt-2" onClick={() => create.mutate()}>Register farmer</button>
-    </Section>))}
-    {((view === 'all' || view === 'gis') && (<Section title="Interactive Polygon Map & Document Vault — Farm GIS & EUDR" sub="PostGIS GeoJSON polygons · certifications · Due Diligence Statements">
+    {((view === 'all' || view === 'directory') && (<div>
+      <Section title={t('Farmer Directory', 'የገበሬዎች ዝርዝር')} sub={t('Professional outgrower registry — click any farmer to open the full profile: performance, procurement history, coffee quantities, quality and payments.', 'የገበሬ መዝገብ — ሙሉ መገለጫ ለመክፈት ማንኛውንም ገበሬ ይጫኑ፦ አፈጻጸም፣ የግዥ ታሪክ፣ የቡና ብዛት፣ ጥራት እና ክፍያዎች።')}>
+        <T state={_q} rows={rows} onRowClick={(r: any) => setSelected(r)} cols={[['farmer_code', t('Farmer ID', 'የገበሬ መለያ')], ['full_name', t('Name', 'ስም')], ['phone', t('Phone', 'ስልክ')], ['kebele', t('Kebele', 'ቀበሌ')], ['coffee_tree_count', t('Trees', 'ዛፎች')], ['total_plot_ha', t('Farm ha', 'ሄክታር')], ['annual_cherry_cap_kg', t('Cap kg/yr', 'ገደብ ኪ.ግ/ዓመት')], ['delivered_this_season_kg', t('Delivered kg', 'የቀረበ ኪ.ግ')], ['kyc_status', 'KYC']]} />
+      </Section>
+      <Section title={t('New Farmer — Registration Form', 'አዲስ ገበሬ — የምዝገባ ቅጽ')} sub={t('Complete farmer registration. Farmer ID is suggested automatically; the annual cap (anti-illicit-blending) follows the registered plot size.', 'ሙሉ የገበሬ ምዝገባ። የገበሬ መለያ በራስ-ሰር ይጠቆማል፤ ዓመታዊ ገደቡ በተመዘገበው የቦታ መጠን ይወሰናል።')}>
+        <div className="grid md:grid-cols-4 gap-2">
+          <Field label={t('Farmer ID', 'የገበሬ መለያ')}><input className="inp" value={f.farmer_code} onChange={(e) => setF({ ...f, farmer_code: e.target.value })} placeholder={nextCode} /></Field>
+          <Field label={t('Full name', 'ሙሉ ስም')}><input className="inp" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></Field>
+          <Field label={t('Gender', 'ጾታ')}><select className="inp" value={f.gender} onChange={(e) => setF({ ...f, gender: e.target.value })}><option value="">{t('Select…', 'ምረጥ…')}</option><option value="male">{t('Male', 'ወንድ')}</option><option value="female">{t('Female', 'ሴት')}</option></select></Field>
+          <Field label={t('Phone', 'ስልክ')}><input className="inp" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="0911…" /></Field>
+          <Field label={t('National ID number', 'የብሔራዊ መታወቂያ ቁጥር')}><input className="inp" value={f.national_id_number} onChange={(e) => setF({ ...f, national_id_number: e.target.value })} /></Field>
+          <Field label={t('Station', 'ጣቢያ')}><StationSelect value={f.station} onChange={(v: string) => setF({ ...f, station: v })} /></Field>
+          <Field label={t('Kebele', 'ቀበሌ')}><input className="inp" value={f.kebele} onChange={(e) => setF({ ...f, kebele: e.target.value })} /></Field>
+          <Field label={t('Family size', 'የቤተሰብ ብዛት')}><input className="inp" type="number" value={f.family_size} onChange={(e) => setF({ ...f, family_size: e.target.value })} /></Field>
+          <Field label={t('Coffee trees', 'የቡና ዛፎች')}><input className="inp" type="number" value={f.coffee_tree_count} onChange={(e) => setF({ ...f, coffee_tree_count: e.target.value })} /></Field>
+          <Field label={t('Total farm size (ha)', 'ጠቅላላ የእርሻ መጠን (ሄክታር)')}><input className="inp" type="number" step="0.01" value={f.total_plot_ha} onChange={(e) => setF({ ...f, total_plot_ha: e.target.value })} /></Field>
+          <Field label={t('Annual cherry cap (kg)', 'ዓመታዊ የቼሪ ገደብ (ኪ.ግ)')}><input className="inp" type="number" value={f.annual_cherry_cap_kg} onChange={(e) => setF({ ...f, annual_cherry_cap_kg: e.target.value })} /></Field>
+          <Field label={t('KYC status', 'የማንነት ሁኔታ')}><select className="inp" value={f.kyc_status} onChange={(e) => setF({ ...f, kyc_status: e.target.value })}><option value="pending">{t('Pending', 'በመጠበቅ ላይ')}</option><option value="verified">{t('Verified', 'ተረጋግጧል')}</option><option value="rejected">{t('Rejected', 'ውድቅ ተደርጓል')}</option></select></Field>
+        </div>
+        <button className="btn mt-3" disabled={!f.full_name || !f.station} onClick={() => create.mutate()}>{t('Register farmer', 'ገበሬ መዝግብ')}</button>
+        {(!f.full_name || !f.station) && <span className="text-xs ml-2" style={{ color: 'var(--muted)' }}>{t('Full name and station are required.', 'ሙሉ ስም እና ጣቢያ ያስፈልጋሉ።')}</span>}
+      </Section>
+    </div>))}
+    {((view === 'all' || view === 'gis') && (<Section title={t('Farm GIS & EUDR — Map, Plots & Documents', 'የእርሻ ካርታና EUDR — ካርታ፣ ቦታዎችና ሰነዶች')} sub={t('GeoJSON farm polygons · certifications · Due Diligence Statements', 'የእርሻ ካርታዎች · የምስክር ወረቀቶች · የEUDR መግለጫዎች')}>
       <FarmerMap plots={plots.rows} />
-      <div className="grid md:grid-cols-2 gap-4 mt-3"><div><h4 className="font-semibold text-sm mb-1">Farm plots</h4><T state={plots} rows={plots.rows} cols={[['plot_name', 'Plot'], ['area_ha', 'ha'], ['elevation_m', 'Elev. m'], ['coffee_variety', 'Variety'], ['deforestation_free', 'Deforestation-free']]} /></div>
-        <div><h4 className="font-semibold text-sm mb-1">Certifications & EUDR DDS</h4><T state={certs} rows={certs.rows} cols={[['cert_type', 'Type'], ['certificate_number', 'Cert #'], ['expires_on', 'Expires']]} /><T state={dds} rows={dds.rows} cols={[['reference_number', 'DDS ref'], ['status', 'Status']]} /></div></div>
+      <div className="grid md:grid-cols-2 gap-4 mt-3"><div><h4 className="font-semibold text-sm mb-1">{t('Farm plots', 'የእርሻ ቦታዎች')}</h4><T state={plots} rows={plots.rows} cols={[['plot_name', t('Plot', 'ቦታ')], ['area_ha', t('ha', 'ሄክታር')], ['elevation_m', t('Elev. m', 'ቁመት ሜ')], ['coffee_variety', t('Variety', 'ዝርያ')], ['deforestation_free', t('Deforestation-free', 'ከደን መፍረስ ነፃ')]]} /></div>
+        <div><h4 className="font-semibold text-sm mb-1">{t('Certifications & EUDR DDS', 'የምስክር ወረቀቶችና EUDR')}</h4><T state={certs} rows={certs.rows} cols={[['cert_type', t('Type', 'ዓይነት')], ['certificate_number', t('Cert #', 'ቁጥር')], ['expires_on', t('Expires', 'የሚያልቅበት')]]} /><T state={dds} rows={dds.rows} cols={[['reference_number', t('DDS ref', 'የDDS ማጣቀሻ')], ['status', t('Status', 'ሁኔታ')]]} /></div></div>
     </Section>))}</div>)
 }
 
 
 export function Collection({ view = 'all' }: { view?: string } = {}) {
+  const t = useT()
   const centers = useList('/collection-centers/'); const agents = useList('/agent-assignments/')
   const intakes = useList('/cherry-intakes/'); const farmers = useList('/farmers/')
   const toast = useToast(); const qc = useQueryClient()
   const [f, setF] = useState<any>({ intake_number: '', farmer: '', center: '', station: '', intake_date: new Date().toISOString().slice(0, 10), coffee_variety: 'Heirloom', gross_kg: 0, tare_kg: 0, floater_deduction_pct: 0, unit_price: 85, qr_receipt_code: '' })
   const net = Math.max(0, (Number(f.gross_kg) || 0) - (Number(f.tare_kg) || 0))
   const payable = net * (1 - (Number(f.floater_deduction_pct) || 0) / 100)
-  const create = useMutation({ mutationFn: () => post('/cherry-intakes/', { ...f, qr_receipt_code: f.qr_receipt_code || `QR-${f.intake_number}` }), onSuccess: (d: any) => { toast(`Intake saved — net ${d.net_kg} kg, payable ${d.payable_kg} kg, total ${d.total_amount} ETB · QR receipt: ${d.qr_receipt_code}`); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  const create = useMutation({ mutationFn: () => post('/cherry-intakes/', { ...f, qr_receipt_code: f.qr_receipt_code || `QR-${f.intake_number}` }), onSuccess: (d: any) => { toast(`${t('Intake saved', 'መቀበያ ተቀምጧል')} — ${t('net', 'የተጣራ')} ${d.net_kg} ${t('kg', 'ኪ.ግ')}, ${t('payable', 'የሚከፈል')} ${d.payable_kg} ${t('kg', 'ኪ.ግ')}, ${t('total', 'ጠቅላላ')} ${d.total_amount} ETB · QR: ${d.qr_receipt_code}`); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
   return (<div>
-    {((view === 'all' || view === 'centers') && (<Section title="Collection Center & Agent Assignment"><T state={centers} rows={centers.rows} cols={[['code', 'Code'], ['name', 'Center'], ['altitude_m', 'Altitude m'], ['is_active', 'Active']]} /><h4 className="font-semibold text-sm mt-3">Field purchasing agent assignments</h4><T state={agents} rows={agents.rows} cols={[['valid_from','Valid from'],['valid_to','Valid to']]} /></Section>))}
+    {((view === 'all' || view === 'centers') && (<Section title="Collection Center & Agent Assignment"><T state={centers} rows={centers.rows} cols={[['code', 'Code'], ['name', 'Center'], ['altitude_m', 'Altitude m'], ['is_active', 'Active']]} /><h4 className="font-semibold text-sm mt-3">{t('Field purchasing agent assignments', 'የመስክ ግዥ ወኪል ምደባዎች')}</h4><T state={agents} rows={agents.rows} cols={[['valid_from','Valid from'],['valid_to','Valid to']]} /></Section>))}
     {((view === 'all' || view === 'intake') && (<Section title="Daily Cherry Intake & Scale Terminal — Weighbridge" sub="net = gross − tare · payable = net − floatation deduction · QR intake receipt issued on save">
       <div className="grid md:grid-cols-4 gap-2">
         <Field label="Intake #"><input className="inp" value={f.intake_number} onChange={(e) => setF({ ...f, intake_number: e.target.value })} placeholder="INT-2026-0002" /></Field>
-        <Field label="Farmer"><select className="inp" value={f.farmer} onChange={(e) => setF({ ...f, farmer: e.target.value })}><option value="">Select…</option>{farmers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.farmer_code} — {x.full_name}</option>)}</select></Field>
-        <Field label="Center"><select className="inp" value={f.center} onChange={(e) => setF({ ...f, center: e.target.value })}><option value="">Select…</option>{centers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+        <Field label="Farmer"><select className="inp" value={f.farmer} onChange={(e) => setF({ ...f, farmer: e.target.value })}><option value="">{t('Select…', 'ምረጥ…')}</option>{farmers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.farmer_code} — {x.full_name}</option>)}</select></Field>
+        <Field label="Center"><select className="inp" value={f.center} onChange={(e) => setF({ ...f, center: e.target.value })}><option value="">{t('Select…', 'ምረጥ…')}</option>{centers.rows.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
         <Field label="Station"><StationSelect value={f.station} onChange={(v: string) => setF({ ...f, station: v })} /></Field>
         <Field label="Gross (kg)"><input className="inp" type="number" value={f.gross_kg} onChange={(e) => setF({ ...f, gross_kg: e.target.value })} /></Field>
         <Field label="Tare (kg)"><input className="inp" type="number" value={f.tare_kg} onChange={(e) => setF({ ...f, tare_kg: e.target.value })} /></Field>
         <Field label="Floatation deduction %"><input className="inp" type="number" value={f.floater_deduction_pct} onChange={(e) => setF({ ...f, floater_deduction_pct: e.target.value })} /></Field>
         <Field label="Unit price (ETB/kg)"><input className="inp" type="number" value={f.unit_price} onChange={(e) => setF({ ...f, unit_price: e.target.value })} /></Field>
       </div>
-      <div className="flex flex-wrap gap-4 mt-3 text-sm"><span>Net: <b>{net.toFixed(2)} kg</b></span><span>Payable: <b>{payable.toFixed(2)} kg</b></span><span>Total: <b>{(payable * (Number(f.unit_price) || 0)).toFixed(2)} ETB</b></span>
-        <button className="btn" onClick={() => create.mutate()}>Record intake + print QR receipt</button></div>
+      <div className="flex flex-wrap gap-4 mt-3 text-sm"><span>{t('Net', 'የተጣራ')}: <b>{net.toFixed(2)} {t('kg', 'ኪ.ግ')}</b></span><span>{t('Payable', 'የሚከፈል')}: <b>{payable.toFixed(2)} {t('kg', 'ኪ.ግ')}</b></span><span>{t('Total', 'ጠቅላላ')}: <b>{(payable * (Number(f.unit_price) || 0)).toFixed(2)} ETB</b></span>
+        <button className="btn" onClick={() => create.mutate()}>{t('Record intake + print QR receipt', 'መቀበያ መዝግብ + የQR ደረሰኝ አትም')}</button></div>
       <div className="mt-3"><T state={intakes} rows={intakes.rows} cols={[['intake_number', 'Intake #'], ['intake_date', 'Date'], ['gross_kg', 'Gross'], ['tare_kg', 'Tare'], ['net_kg', 'Net'], ['payable_kg', 'Payable'], ['total_amount', 'Total ETB'], ['qr_receipt_code', 'QR receipt']]} /></div>
     </Section>))}</div>)
 }
 
 
 export function Procurement({ view = 'all' }: { view?: string } = {}) {
+  const t = useT()
   const prices = useList('/daily-prices/'); const vouchers = useList('/purchase-vouchers/'); const grns = useList('/grns/'); const suppliers = useList('/suppliers/')
   const toast = useToast(); const qc = useQueryClient()
   const [p, setP] = useState<any>({ station: '', price_date: new Date().toISOString().slice(0, 10), product: 'cherry', grade: '1', price_per_kg: 85 })
-  const create = useMutation({ mutationFn: () => post('/daily-prices/', p), onSuccess: () => { toast('Daily price set'); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  const create = useMutation({ mutationFn: () => post('/daily-prices/', p), onSuccess: () => { toast(t('Daily price set', 'የዕለት ዋጋ ተቀምጧል')); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
   return (<div>
     {((view === 'all' || view === 'prices') && (<Section title="Daily Buying Price & Supplier Configuration">
       <div className="grid md:grid-cols-5 gap-2"><Field label="Station"><StationSelect value={p.station} onChange={(v: string) => setP({ ...p, station: v })} /></Field>
         <Field label="Date"><input className="inp" type="date" value={p.price_date} onChange={(e) => setP({ ...p, price_date: e.target.value })} /></Field>
-        <Field label="Product"><select className="inp" value={p.product} onChange={(e) => setP({ ...p, product: e.target.value })}><option value="cherry">Red cherry</option><option value="parchment">Parchment</option></select></Field>
+        <Field label="Product"><select className="inp" value={p.product} onChange={(e) => setP({ ...p, product: e.target.value })}><option value="cherry">{t('Red cherry', 'ቀይ ቼሪ')}</option><option value="parchment">{t('Parchment', 'በቆሎ')}</option></select></Field>
         <Field label="Grade"><input className="inp" value={p.grade} onChange={(e) => setP({ ...p, grade: e.target.value })} /></Field>
         <Field label="Price / kg"><input className="inp" type="number" value={p.price_per_kg} onChange={(e) => setP({ ...p, price_per_kg: e.target.value })} /></Field></div>
-      <button className="btn mt-2" onClick={() => create.mutate()}>Set daily price</button>
+      <button className="btn mt-2" onClick={() => create.mutate()}>{t('Set daily price', 'የዕለት ዋጋ አስቀምጥ')}</button>
       <T state={prices} rows={prices.rows} cols={[['price_date', 'Date'], ['product', 'Product'], ['grade', 'Grade'], ['price_per_kg', 'ETB/kg']]} />
-      <h4 className="font-semibold text-sm mt-3">Suppliers (ACRs / cooperatives)</h4><T state={suppliers} rows={suppliers.rows} cols={[['code', 'Code'], ['name', 'Supplier'], ['supplier_type', 'Type'], ['phone', 'Phone']]} />
+      <h4 className="font-semibold text-sm mt-3">{t('Suppliers (ACRs / cooperatives)', 'አቅራቢዎች (ACR / ህብረት ሥራ)')}</h4><T state={suppliers} rows={suppliers.rows} cols={[['code', 'Code'], ['name', 'Supplier'], ['supplier_type', 'Type'], ['phone', 'Phone']]} />
     </Section>))}
     {((view === 'all' || view === 'vouchers') && (<Section title="Purchase Ledger & Voucher Approval — Vouchers & GRNs"><T state={vouchers} rows={vouchers.rows} cols={[['voucher_number', 'Voucher'], ['voucher_date', 'Date'], ['quantity_kg', 'Qty kg'], ['total_amount', 'Total'], ['status', 'Status']]} /><T state={grns} rows={grns.rows} cols={[['grn_number', 'GRN'], ['received_date', 'Received'], ['received_kg', 'Received kg'], ['variance_kg', 'Variance']]} /></Section>))}
   </div>)
@@ -199,14 +226,15 @@ export function DryMill({ view = 'all' }: { view?: string } = {}) {
 
 /* ---- Command > Financial Position (Sub-Module 1.2) ---- */
 export function FinancialPosition() {
+  const t = useT()
   const q = useQuery({ queryKey: ['dashboard'], queryFn: () => api('/api/dashboard/') })
   const snapshotsQ = useList('/dashboard-snapshots/'); const snapshots = snapshotsQ.rows
   const contracts = useList('/sales-contracts/')
   const d = q.data
   if (!d) return q.isError
-    ? <div className="card text-sm" style={{ color: 'var(--danger)' }}>Financial position unavailable: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>Retry</button></div>
+    ? <div className="card text-sm" style={{ color: 'var(--danger)' }}>{t('Financial position unavailable', 'የፋይናንስ ሁኔታ አይገኝም')}: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>Retry</button></div>
     : <div className="space-y-2">{[0, 1].map((i) => <div key={i} className="skeleton h-20 w-full" />)}</div>
-  const kpis: [string, any][] = [['Open export contracts', d.open_contracts], ['Committed stock (kg)', d.committed_kg], ['Warehouse stock (kg)', d.warehouse_stock_kg], ['Unallocated stock (kg)', (Number(d.warehouse_stock_kg) - Number(d.committed_kg)).toFixed(2)], ['Cherry procured (kg)', d.cherry_procured_kg], ['Containers open', d.containers_open]]
+  const kpis: [string, any][] = [[t('Open export contracts', 'ክፍት የኤክስፖርት ውሎች'), d.open_contracts], [t('Committed stock (kg)', 'የተወሰነ ክምችት (ኪ.ግ)'), d.committed_kg], [t('Warehouse stock (kg)', 'የመጋዘን ክምችት (ኪ.ግ)'), d.warehouse_stock_kg], [t('Unallocated stock (kg)', 'ያልተመደበ ክምችት (ኪ.ግ)'), (Number(d.warehouse_stock_kg) - Number(d.committed_kg)).toFixed(2)], [t('Cherry procured (kg)', 'የተገዛ ቼሪ (ኪ.ግ)'), d.cherry_procured_kg], [t('Containers open', 'ክፍት ኮንቴይነሮች'), d.containers_open]]
   return (<div>
     <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">{kpis.map(([l, v]) => <div key={l} className="card"><div className="lbl">{l}</div><div className="kpi">{String(v)}</div></div>)}</div>
     <Section title="Open export contract positions — committed vs unallocated stock">

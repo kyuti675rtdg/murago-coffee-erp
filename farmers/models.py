@@ -140,3 +140,121 @@ class EUDRDueDiligenceStatement(TimeStampedUUIDModel):
     risk_assessment = models.TextField(blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
+
+
+# ---------------------------------------------------------------------------
+# Farmer planning & bonus (second-payment) system
+# ---------------------------------------------------------------------------
+
+class BonusScheme(TimeStampedUUIDModel):
+    """Configurable kg-based bonus scheme for a season.
+
+    A farmer's delivered (payable) kg in the season is priced by the tier
+    whose [from_kg, to_kg) range contains it, then adjusted by a quality
+    multiplier picked from ``quality_bands`` — a JSON list of
+    ``{"min_score": 85, "multiplier": 1.25}`` entries evaluated from the
+    highest min_score down. Everything is editable from Settings, nothing
+    is hard-coded in the calculation engine.
+    """
+
+    name = models.CharField(max_length=200)
+    season_year = models.PositiveIntegerField(db_index=True,
+                                              help_text="Season the scheme pays for, e.g. 2026")
+    is_active = models.BooleanField(default=True, db_index=True)
+    min_eligible_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                          help_text="Farmers below this delivered kg earn no bonus")
+    quality_bands = models.JSONField(default=list, blank=True,
+                                     help_text='[{"min_score": 85, "multiplier": 1.25}, ...]')
+    notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.season_year})"
+
+
+class BonusTier(TimeStampedUUIDModel):
+    """One kg band of a BonusScheme: delivered kg in [from_kg, to_kg) earns rate_per_kg."""
+
+    scheme = models.ForeignKey(BonusScheme, on_delete=models.CASCADE, related_name="tiers")
+    from_kg = models.DecimalField(max_digits=12, decimal_places=2)
+    to_kg = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                help_text="Empty = no upper bound")
+    rate_per_kg = models.DecimalField(max_digits=10, decimal_places=2,
+                                      help_text="Bonus ETB per delivered (payable) kg")
+    label = models.CharField(max_length=120, blank=True)
+
+    class Meta(TimeStampedUUIDModel.Meta):
+        ordering = ["from_kg"]
+        constraints = [models.UniqueConstraint(fields=["scheme", "from_kg"], name="uniq_bonus_tier_from")]
+
+    def __str__(self):
+        return f"{self.scheme.name}: {self.from_kg}+ kg @ {self.rate_per_kg}"
+
+
+class FarmerSeasonPlan(TimeStampedUUIDModel):
+    """Next-year plan for one farmer: production target + support needs."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted"
+        APPROVED = "approved", "Approved"
+
+    farmer = models.ForeignKey(Farmer, on_delete=models.CASCADE, related_name="season_plans")
+    plan_year = models.PositiveIntegerField(db_index=True)
+    planned_cherry_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                            help_text="Target cherry delivery for the plan year (kg)")
+    planned_new_trees = models.PositiveIntegerField(default=0)
+    planned_area_expansion_ha = models.DecimalField(max_digits=8, decimal_places=3, default=0)
+    inputs_support = models.TextField(blank=True, help_text="Seedlings, fertiliser, training or credit the farmer needs")
+    agronomy_notes = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+
+    class Meta(TimeStampedUUIDModel.Meta):
+        constraints = [models.UniqueConstraint(fields=["farmer", "plan_year"], name="uniq_farmer_plan_year")]
+        ordering = ["plan_year", "farmer__full_name"]
+
+    def __str__(self):
+        return f"{self.farmer.farmer_code} plan {self.plan_year}"
+
+
+class BonusCalculation(TimeStampedUUIDModel):
+    """One farmer's computed bonus under a scheme, with approval workflow.
+
+    Flow: calculated -> pending_approval -> approved -> paid (a Disbursement
+    is created on payment) or -> rejected. Re-running a calculation refreshes
+    rows that are still in calculated/pending_approval state only; approved,
+    paid and rejected rows are never silently overwritten.
+    """
+
+    class Status(models.TextChoices):
+        CALCULATED = "calculated", "Calculated"
+        PENDING = "pending_approval", "Pending approval"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        PAID = "paid", "Paid"
+
+    scheme = models.ForeignKey(BonusScheme, on_delete=models.PROTECT, related_name="calculations")
+    farmer = models.ForeignKey(Farmer, on_delete=models.PROTECT, related_name="bonus_calculations")
+    station = models.ForeignKey("core.Station", on_delete=models.PROTECT, related_name="bonus_calculations")
+    season_year = models.PositiveIntegerField(db_index=True)
+    delivered_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    intake_count = models.PositiveIntegerField(default=0)
+    avg_quality_score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True,
+                                            help_text="Average cupping total (0-100) of the farmer's lots, if cupped")
+    tier_rate_per_kg = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    quality_multiplier = models.DecimalField(max_digits=6, decimal_places=3, default=1)
+    gross_bonus_etb = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.CALCULATED, db_index=True)
+    calculated_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="bonus_approvals")
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+    disbursement = models.ForeignKey("payments.Disbursement", null=True, blank=True,
+                                     on_delete=models.SET_NULL, related_name="bonus_calculations")
+
+    class Meta(TimeStampedUUIDModel.Meta):
+        constraints = [models.UniqueConstraint(fields=["scheme", "farmer"], name="uniq_bonus_calc")]
+        ordering = ["-gross_bonus_etb"]
+
+    def __str__(self):
+        return f"Bonus {self.farmer.farmer_code} {self.season_year}: {self.gross_bonus_etb} ETB ({self.status})"

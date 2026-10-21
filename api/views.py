@@ -50,6 +50,9 @@ REGISTRY = [
     ("farmers", farmers_m.Farmer), ("farmer-documents", farmers_m.FarmerDocument),
     ("farm-plots", farmers_m.FarmPlot), ("certifications", farmers_m.Certification),
     ("eudr-statements", farmers_m.EUDRDueDiligenceStatement),
+    ("bonus-schemes", farmers_m.BonusScheme), ("bonus-tiers", farmers_m.BonusTier),
+    ("farmer-season-plans", farmers_m.FarmerSeasonPlan),
+    ("bonus-calculations", farmers_m.BonusCalculation),
     ("collection-centers", collection_m.CollectionCenter), ("agent-assignments", collection_m.AgentAssignment),
     ("cash-floats", collection_m.CashFloat), ("cherry-intakes", collection_m.CherryIntake),
     ("suppliers", procurement_m.Supplier), ("daily-prices", procurement_m.DailyPrice),
@@ -818,6 +821,119 @@ def backups_list(request):
     return Response({"files": files, "directory": "backups/", "command": "python manage.py backup_db"})
 
 
+# ------------------------------------------------------- farmers / bonus
+
+class FarmerViewSet(StationScopedViewSet):
+    model = farmers_m.Farmer
+
+    @action(detail=True, methods=["get"])
+    def profile(self, request, pk=None):
+        """Full farmer profile: performance, procurement history, quality, payments."""
+        from django.db.models import Count, Sum
+
+        farmer = self.get_object()
+        intakes = collection_m.CherryIntake.objects.filter(farmer=farmer).order_by("-intake_date")
+        vouchers = procurement_m.PurchaseVoucher.objects.filter(farmer=farmer).order_by("-voucher_date")
+        payments = payments_m.Disbursement.objects.filter(farmer=farmer).order_by("-paid_on", "-created_at")
+        by_year = list(intakes.values("intake_date__year")
+                       .annotate(kg=Sum("payable_kg"), amount=Sum("total_amount"), deliveries=Count("id"))
+                       .order_by("intake_date__year"))
+        total_kg = intakes.aggregate(kg=Sum("payable_kg"))["kg"] or Decimal("0")
+        total_value = intakes.aggregate(v=Sum("total_amount"))["v"] or Decimal("0")
+        total_paid = payments.filter(status="paid").aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        lot_ids = intakes.exclude(lot__isnull=True).values_list("lot_id", flat=True).distinct()
+        quality_rows = []
+        scores = []
+        for cs in quality_m.CuppingScore.objects.filter(lot_id__in=list(lot_ids)).select_related("lot"):
+            total = cs.total_score
+            scores.append(total)
+            quality_rows.append({"lot_code": cs.lot.lot_code, "cupped_on": cs.cupped_on, "total_score": str(total)})
+        cap = farmer.annual_cherry_cap_kg or Decimal("0")
+        stats = {
+            "total_delivered_kg": str(total_kg),
+            "total_deliveries": intakes.count(),
+            "total_procurement_value_etb": str(total_value),
+            "total_paid_etb": str(total_paid),
+            "avg_quality_score": str((sum(scores) / len(scores)).quantize(Decimal("0.01"))) if scores else None,
+            "cap_utilization_pct": str((total_kg / cap * 100).quantize(Decimal("0.1"))) if cap else None,
+            "by_year": [{"year": r["intake_date__year"], "kg": str(r["kg"] or 0),
+                         "amount_etb": str(r["amount"] or 0), "deliveries": r["deliveries"]} for r in by_year],
+        }
+        ser = serializer_for
+        return Response({
+            "farmer": ser(farmers_m.Farmer)(farmer).data,
+            "stats": stats,
+            "plots": ser(farmers_m.FarmPlot)(farmer.plots.all(), many=True).data,
+            "certifications": ser(farmers_m.Certification)(farmer.certifications.all(), many=True).data,
+            "procurement_history": ser(collection_m.CherryIntake)(intakes[:100], many=True).data,
+            "vouchers": ser(procurement_m.PurchaseVoucher)(vouchers[:100], many=True).data,
+            "quality": quality_rows,
+            "payments": ser(payments_m.Disbursement)(payments[:100], many=True).data,
+            "plans": ser(farmers_m.FarmerSeasonPlan)(farmer.season_plans.all(), many=True).data,
+            "bonuses": ser(farmers_m.BonusCalculation)(farmer.bonus_calculations.all(), many=True).data,
+        })
+
+
+class BonusCalculationViewSet(StationScopedViewSet):
+    model = farmers_m.BonusCalculation
+
+    @action(detail=False, methods=["post"])
+    def run(self, request):
+        """(Re)compute bonuses for every delivering farmer under one scheme."""
+        from farmers.bonus import run_scheme
+
+        scheme_id = request.data.get("scheme")
+        if not scheme_id:
+            return _err("scheme is required.")
+        scheme = get_object_or_404(farmers_m.BonusScheme, pk=scheme_id)
+        calcs = run_scheme(scheme)
+        return Response({"scheme": str(scheme.id), "season_year": scheme.season_year,
+                         "calculated": len(calcs),
+                         "total_bonus_etb": str(sum((c.gross_bonus_etb for c in calcs), Decimal("0")))})
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        calc = self.get_object()
+        if calc.status not in (calc.Status.CALCULATED, calc.Status.PENDING):
+            return _err(f"Only a calculated/pending bonus can be approved (current: {calc.status}).")
+        calc.status = calc.Status.APPROVED
+        calc.approved_by = request.user
+        calc.approved_at = timezone.now()
+        calc.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        self._audit("approve", calc)
+        return Response(serializer_for(self.model)(calc).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        calc = self.get_object()
+        if calc.status in (calc.Status.APPROVED, calc.Status.PAID, calc.Status.REJECTED):
+            return _err(f"A {calc.status} bonus cannot be rejected.")
+        calc.status = calc.Status.REJECTED
+        calc.rejection_reason = request.data.get("reason", "")
+        calc.save(update_fields=["status", "rejection_reason", "updated_at"])
+        self._audit("reject", calc)
+        return Response(serializer_for(self.model)(calc).data)
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        """Pay an approved bonus: creates a farmer Disbursement and links it."""
+        calc = self.get_object()
+        if calc.status != calc.Status.APPROVED:
+            return _err(f"Only an approved bonus can be paid (current: {calc.status}).")
+        if calc.gross_bonus_etb <= 0:
+            return _err("Bonus amount is zero — nothing to pay.")
+        disb = payments_m.Disbursement.objects.create(
+            reference=f"BONUS-{calc.season_year}-{calc.farmer.farmer_code}-{str(calc.id)[:8]}",
+            payee_type="farmer", farmer=calc.farmer, amount=calc.gross_bonus_etb,
+            method=request.data.get("method", "bank"), paid_on=timezone.now().date(),
+            status="paid", paid_by=request.user)
+        calc.disbursement = disb
+        calc.status = calc.Status.PAID
+        calc.save(update_fields=["disbursement", "status", "updated_at"])
+        self._audit("pay", calc)
+        return Response(serializer_for(self.model)(calc).data)
+
+
 # ---------------------------------------------------------------- viewset factory
 CUSTOM_VIEWSETS = {
     "lots": LotViewSet, "drying-handovers": DryingHandoverViewSet,
@@ -829,6 +945,7 @@ CUSTOM_VIEWSETS = {
     "notifications": NotificationViewSet, "journal-entries": JournalEntryViewSet,
     "journal-lines": JournalLineViewSet, "purchase-vouchers": PurchaseVoucherViewSet,
     "stock-audits": StockAuditViewSet, "containers": ContainerViewSet,
+    "farmers": FarmerViewSet, "bonus-calculations": BonusCalculationViewSet,
 }
 
 
