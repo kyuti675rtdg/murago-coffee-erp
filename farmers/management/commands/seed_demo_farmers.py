@@ -89,9 +89,17 @@ class Command(BaseCommand):
                 "full_name": name, "gender": gender, "phone": f"09{rng.randint(10000000, 99999999)}",
                 "national_id_number": f"ET{rng.randint(100000000, 999999999)}" if idx % 5 else "",
                 "station": station, "kebele": kebele, "family_size": family,
+                "region": "Sidama", "zone": "Central Sidama", "woreda": kebele,
+                "coffee_variety": VARIETIES[idx % len(VARIETIES)],
                 "coffee_tree_count": trees, "total_plot_ha": Decimal(ha),
                 "annual_cherry_cap_kg": Decimal(cap),
                 "kyc_status": "verified" if idx % 6 else "pending"})
+            # backfill the listing fields for farmers created before they existed
+            if not farmer.region:
+                farmer.region, farmer.zone = "Sidama", "Central Sidama"
+                farmer.woreda = farmer.woreda or kebele
+                farmer.coffee_variety = farmer.coffee_variety or VARIETIES[idx % len(VARIETIES)]
+                farmer.save(update_fields=["region", "zone", "woreda", "coffee_variety"])
             created_farmers += int(created)
             lat, lon = 6.55 + idx * 0.004, 38.38 + idx * 0.005
             FarmPlot.objects.get_or_create(farmer=farmer, plot_name=f"{kebele} Plot 1", defaults={
@@ -199,6 +207,17 @@ class Command(BaseCommand):
                 calc.approved_by = admin
                 calc.approved_at = timezone.now()
                 calc.save(update_fields=["status", "approved_by", "approved_at"])
+
+        # Backfill listing fields (region/zone/woreda/variety) for ANY farmer
+        # that still lacks them (e.g. the two original base-seed farmers).
+        zone_by_station = {"MUR": "Central Sidama", "BEN": "Eastern Sidama"}
+        for f in Farmer.objects.filter(region=""):
+            plot = f.plots.first()
+            f.region = f.station.region or "Sidama"
+            f.zone = zone_by_station.get(f.station.code, "")
+            f.woreda = f.station.woreda or f.kebele
+            f.coffee_variety = (plot.coffee_variety if plot and plot.coffee_variety else "Heirloom")
+            f.save(update_fields=["region", "zone", "woreda", "coffee_variety"])
 
         self.stdout.write(self.style.SUCCESS(
             f"Demo farmers seeded: {created_farmers} new of 20 · bonus calculations: {len(calcs)} · paid: {paid_refs}"))

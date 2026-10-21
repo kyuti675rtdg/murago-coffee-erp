@@ -705,7 +705,38 @@ def dashboard(request):
         "avg_water_ratio": str(water.exclude(water_ratio=None).aggregate(a=dj_models.Avg("water_ratio"))["a"] or ""),
         "farmers": farmers_m.Farmer.objects.count(),
         "containers_open": exports_m.ContainerLoading.objects.exclude(status="shipped").count(),
+        **_management_insights(ids),
     })
+
+
+def _management_insights(ids):
+    """Extra decision KPIs for management (all computed live)."""
+    intakes = collection_m.CherryIntake.objects.all()
+    intakes = _station_filter(intakes, collection_m.CherryIntake, ids)
+    agg = intakes.aggregate(kg=dj_models.Sum("payable_kg"), cost=dj_models.Sum("total_amount"))
+    kg = agg["kg"] or Decimal("0"); cost = agg["cost"] or Decimal("0")
+    farmers_qs = farmers_m.Farmer.objects.all()
+    farmers_qs = _station_filter(farmers_qs, farmers_m.Farmer, ids)
+    total_farmers = farmers_qs.count()
+    active_ids = set(intakes.values_list("farmer_id", flat=True))
+    active_pct = (Decimal(len(active_ids)) / total_farmers * 100).quantize(Decimal("0.1")) if total_farmers else Decimal("0")
+    vouchers = procurement_m.PurchaseVoucher.objects.all()
+    vouchers = _station_filter(vouchers, procurement_m.PurchaseVoucher, ids)
+    bonuses = farmers_m.BonusCalculation.objects.all()
+    bonuses = _station_filter(bonuses, farmers_m.BonusCalculation, ids)
+    liability = bonuses.filter(status="approved").aggregate(v=dj_models.Sum("gross_bonus_etb"))["v"] or Decimal("0")
+    by_station = (intakes.values("station__code").annotate(kg=dj_models.Sum("payable_kg"))
+                  .order_by("-kg").first())
+    return {
+        "procurement_cost_etb": str(cost),
+        "avg_price_per_kg": str((cost / kg).quantize(Decimal("0.01"))) if kg else "0",
+        "active_farmers": len(active_ids), "active_farmer_pct": str(active_pct),
+        "pending_vouchers": vouchers.filter(status="pending").count(),
+        "pending_bonuses": bonuses.filter(status="pending_approval").count(),
+        "bonus_liability_etb": str(liability),
+        "top_station_code": (by_station or {}).get("station__code"),
+        "top_station_kg": str((by_station or {}).get("kg") or 0),
+    }
 
 
 @api_view(["POST"])
@@ -868,6 +899,36 @@ def backups_list(request):
 
 class FarmerViewSet(StationScopedViewSet):
     model = farmers_m.Farmer
+
+    def list(self, request, *args, **kwargs):
+        """Directory list enriched with each farmer's lifetime production."""
+        response = super().list(request, *args, **kwargs)
+        rows = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        totals = {
+            str(farmer_id): total
+            for farmer_id, total in (
+                collection_m.CherryIntake.objects
+                .values("farmer_id")
+                .annotate(t=dj_models.Sum("payable_kg"))
+                .values_list("farmer_id", "t")
+            )
+        }
+        for row in rows:
+            row["total_production_kg"] = str(totals.get(str(row["id"]), Decimal("0")))
+        return response
+
+    def destroy(self, request, *args, **kwargs):
+        """Safe delete: a farmer with delivery/payment history is deactivated,
+        never hard-deleted (their records are legal history)."""
+        farmer = self.get_object()
+        has_history = (farmer.intakes.exists() or farmer.vouchers.exists()
+                       or farmer.season_plans.exists() or farmer.bonus_calculations.exists())
+        if has_history:
+            farmer.is_active = False
+            farmer.save(update_fields=["is_active", "updated_at"])
+            return Response({"detail": "Farmer has delivery/payment history and was deactivated instead of deleted.",
+                             "deactivated": True, "id": str(farmer.id)})
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["get"])
     def profile(self, request, pk=None):

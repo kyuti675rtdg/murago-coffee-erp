@@ -16,8 +16,23 @@ export function Dashboard() {
   if (!d) return q.isError ? <div className="card text-sm" style={{color:'var(--danger)'}}>{t('Dashboard unavailable', 'ዳሽቦርዱ አይገኝም')}: {errMsg(q.error)} <button className="btn-ghost !py-1 text-xs ml-2" onClick={() => q.refetch()}>{t('Retry', 'እንደገና ሞክር')}</button></div> : <div className="space-y-2">{[0,1,2].map(i=><div key={i} className="skeleton h-20 w-full" />)}</div>
   const stageData = STAGES.map((s) => ({ stage: s.replace(/_/g, ' '), lots: d.lots_by_stage?.[s] ?? 0 }))
   const kpis: [string, any][] = [[t('Lots in pipeline', 'በሂደት ላይ ያሉ ሎቶች'), d.lots_total], [t('Cherry procured (kg)', 'የተገዛ ቼሪ (ኪ.ግ)'), d.cherry_procured_kg], [t('Warehouse stock (kg)', 'የመጋዘን ክምችት (ኪ.ግ)'), d.warehouse_stock_kg], [t('Open export contracts', 'ክፍት የኤክስፖርት ውሎች'), d.open_contracts], [t('Committed stock (kg)', 'የተወሰነ ክምችት (ኪ.ግ)'), d.committed_kg], [t('Farmers registered', 'የተመዘገቡ ገበሬዎች'), d.farmers], [t('Containers open', 'ክፍት ኮንቴይነሮች'), d.containers_open], [t('Avg fuel ratio (L/kg)', 'አማካይ የነዳጅ ሬሽዮ (ሊ/ኪ.ግ)'), String(d.avg_fuel_ratio).slice(0, 7)], [t('Avg water ratio (L/kg)', 'አማካይ የውሃ ሬሽዮ (ሊ/ኪ.ግ)'), String(d.avg_water_ratio).slice(0, 7)], [t('Fuel anomalies', 'የነዳጅ ያልተለመዱ ሁኔታዎች'), d.fuel_anomalies], [t('Water anomalies', 'የውሃ ያልተለመዱ ሁኔታዎች'), d.water_anomalies]]
+  const insightKpis: [string, any, string][] = [
+    [t('Procurement spend', 'የግዥ ወጪ'), `ETB ${Number(d.procurement_cost_etb ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, t('Total paid value of recorded cherry procurement', 'የተመዘገበ የቼሪ ግዥ ጠቅላላ ዋጋ')],
+    [t('Avg buying price', 'አማካይ የግዥ ዋጋ'), `ETB ${Number(d.avg_price_per_kg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}/kg`, t('Use this to watch daily price discipline by site', 'የዋጋ ቁጥጥርን በጣቢያ ለመከታተል ይጠቀሙ')],
+    [t('Active supplying farmers', 'ንቁ አቅራቢ ገበሬዎች'), `${d.active_farmers ?? 0} · ${d.active_farmer_pct ?? 0}%`, t('Registered farmers who delivered coffee in the data set', 'ቡና ካቀረቡ የተመዘገቡ ገበሬዎች')],
+    [t('Pending voucher approvals', 'በመጠበቅ ላይ የወረቀት ማጽደቆች'), d.pending_vouchers ?? 0, t('Procurement vouchers waiting for the next approval step', 'ለሚቀጥለው ማጽደቅ የሚጠብቁ የግዥ ወረቀቶች')],
+    [t('Pending bonus approvals', 'በመጠበቅ ላይ የጉርሻ ማጽደቆች'), d.pending_bonuses ?? 0, t('Calculated farmer bonuses waiting for approval', 'ማጽደቅ የሚጠብቁ የተሰሉ የገበሬ ጉርሻዎች')],
+    [t('Approved bonus liability', 'የጸደቀ የጉርሻ ክፍያ'), `ETB ${Number(d.bonus_liability_etb ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, t('Approved but unpaid farmer bonus exposure', 'የጸደቀ ግን ያልተከፈለ የገበሬ ጉርሻ')],
+    [t('Top supplying site', 'ምርጥ አቅራቢ ጣቢያ'), d.top_station_code ?? '—', `${Number(d.top_station_kg ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg ${t('collected', 'ተሰብስቧል')}`],
+    [t('Unallocated stock', 'ያልተመደበ ክምችት'), `${Math.max(0, Number(d.warehouse_stock_kg ?? 0) - Number(d.committed_kg ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`, t('Warehouse stock not yet committed to contracts', 'እስካሁን ለውሎች ያልተወሰነ የመጋዘን ክምችት')],
+  ]
     return (<div>
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mb-4">{kpis.map(([l, v]) => <div key={l} className="card"><div className="lbl">{l}</div><div className="kpi">{String(v)}</div></div>)}</div>
+    <Section title={t('Management Insights — decision KPIs', 'የአመራር ግንዛቤዎች — የውሳኔ KPIዎች')} sub={t('Live financial, supply-base, approval and bonus indicators for management decisions — not static demo numbers.', 'ለአመራር ውሳኔዎች የቀጥታ ፋይናንስ፣ አቅርቦት፣ ማጽደቅ እና የጉርሻ አመልካቾች — ቋሚ የሙከራ ቁጥሮች አይደለም።')}>
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+        {insightKpis.map(([l, v, hint]) => <div key={l} className="rounded-xl p-3" style={{ background: 'var(--surface2)' }}><div className="lbl">{l}</div><div className="text-xl font-bold mt-1">{String(v)}</div><div className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>{hint}</div></div>)}
+      </div>
+    </Section>
     <Section title="Station & Pipeline Telemetry — lots by FSM stage" sub="Live Operations Command Center · contract position: committed vs warehouse stock shown above">
       <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={stageData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="stage" tick={{ fontSize: 10, fill: "var(--muted)" }} interval={0} angle={-30} textAnchor="end" height={60} /><YAxis allowDecimals={false} tick={{ fill: "var(--muted)" }} /><Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }} /><Bar dataKey="lots" fill="var(--accent)" /></BarChart></ResponsiveContainer></div>
     </Section>
@@ -46,42 +61,148 @@ function FarmerMap({ plots }: { plots: any[] }) {
 export function Farmers({ view = 'all' }: { view?: string } = {}) {
   const t = useT()
   const _q = useList('/farmers/'); const rows = _q.rows
+  const stationsQ = useList('/stations/'); const stations = stationsQ.rows
   const plots = useList('/farm-plots/')
   const certs = useList('/certifications/')
   const dds = useList('/eudr-statements/')
   const toast = useToast(); const qc = useQueryClient()
   const [selected, setSelected] = useState<any>(null)
+  const [editing, setEditing] = useState<any>(null)
+  const [filters, setFilters] = useState<any>({ station: '', region: '', zone: '', variety: '', status: '', kyc: '' })
+  const stationById = useMemo(() => new Map(stations.map((s: any) => [s.id, s])), [stations])
+  const enriched = useMemo(() => rows.map((r: any) => {
+    const st = stationById.get(r.station)
+    return {
+      ...r,
+      site_code: st?.code ?? '',
+      washing_station: st?.name ?? '',
+      registration_date: String(r.created_at ?? '').slice(0, 10),
+      status_label: r.is_active ? 'Active' : 'Inactive',
+    }
+  }), [rows, stationById])
+  const options = (key: string) => Array.from(new Set(enriched.map((r: any) => String(r[key] ?? '')).filter(Boolean))).sort()
+  const filtered = useMemo(() => enriched.filter((r: any) =>
+    (!filters.station || r.station === filters.station) &&
+    (!filters.region || r.region === filters.region) &&
+    (!filters.zone || r.zone === filters.zone) &&
+    (!filters.variety || r.coffee_variety === filters.variety) &&
+    (!filters.status || r.status_label === filters.status) &&
+    (!filters.kyc || r.kyc_status === filters.kyc)
+  ), [enriched, filters])
   const nextCode = useMemo(() => {
     const nums = rows.map((r: any) => parseInt(String(r.farmer_code).replace(/\D/g, ''), 10)).filter((n: number) => !Number.isNaN(n))
     return `FRM-2026-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, '0')}`
   }, [rows])
-  const empty = { farmer_code: '', full_name: '', gender: '', phone: '', national_id_number: '', station: '', kebele: '', family_size: 5, coffee_tree_count: 0, total_plot_ha: 0, annual_cherry_cap_kg: 0, kyc_status: 'pending' }
+  const empty = { farmer_code: '', full_name: '', gender: '', phone: '', national_id_number: '', station: '', region: 'Sidama', zone: '', woreda: '', kebele: '', coffee_variety: '', family_size: 5, coffee_tree_count: 0, total_plot_ha: 0, annual_cherry_cap_kg: 0, kyc_status: 'pending', is_active: true }
   const [f, setF] = useState<any>(empty)
-  const create = useMutation({ mutationFn: () => post('/farmers/', { ...f, farmer_code: f.farmer_code || nextCode }), onSuccess: () => { toast(t('Farmer registered', 'ገበሬ ተመዝግቧል')); setF(empty); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  const payload = (x: any) => ({
+    farmer_code: x.farmer_code || nextCode, full_name: x.full_name, gender: x.gender || '', phone: x.phone || '',
+    national_id_number: x.national_id_number || '', station: x.station, region: x.region || '', zone: x.zone || '',
+    woreda: x.woreda || '', kebele: x.kebele || '', coffee_variety: x.coffee_variety || '',
+    family_size: Number(x.family_size || 1), coffee_tree_count: Number(x.coffee_tree_count || 0),
+    total_plot_ha: x.total_plot_ha || 0, annual_cherry_cap_kg: x.annual_cherry_cap_kg || 0,
+    kyc_status: x.kyc_status || 'pending', is_active: !!x.is_active,
+  })
+  const save = useMutation({
+    mutationFn: () => editing
+      ? api(`/api/farmers/${editing.id}/`, { method: 'PATCH', body: JSON.stringify(payload(f)) })
+      : post('/farmers/', payload(f)),
+    onSuccess: () => { toast(editing ? t('Farmer updated', 'የገበሬ መረጃ ተዘምኗል') : t('Farmer registered', 'ገበሬ ተመዝግቧል')); setEditing(null); setF(empty); qc.invalidateQueries() },
+    onError: (e: any) => toast(errMsg(e), false),
+  })
+  const remove = useMutation({
+    mutationFn: (r: any) => api(`/api/farmers/${r.id}/`, { method: 'DELETE' }),
+    onSuccess: (d: any) => { toast(d?.detail ?? t('Farmer deleted', 'ገበሬ ተሰርዟል')); qc.invalidateQueries() },
+    onError: (e: any) => toast(errMsg(e), false),
+  })
+  const startEdit = (r: any) => {
+    setEditing(r); setF({ ...empty, ...r })
+    setTimeout(() => document.getElementById('farmer-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+  const startAdd = () => {
+    setEditing(null); setF({ ...empty, farmer_code: nextCode })
+    setTimeout(() => document.getElementById('farmer-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+  const onStation = (stationId: string) => {
+    const st = stationById.get(stationId)
+    setF((prev: any) => ({ ...prev, station: stationId, region: st?.region || prev.region, woreda: st?.woreda || prev.woreda, zone: st?.code === 'BEN' ? 'Eastern Sidama' : st?.code === 'MUR' ? 'Central Sidama' : prev.zone }))
+  }
   if (selected) return <FarmerProfile farmerId={selected.id} onBack={() => setSelected(null)} />
+  const totalProduction = filtered.reduce((sum: number, r: any) => sum + Number(r.total_production_kg || 0), 0)
+  const totalFarmHa = filtered.reduce((sum: number, r: any) => sum + Number(r.total_plot_ha || 0), 0)
+  const activeCount = filtered.filter((r: any) => r.is_active).length
+  const verifiedCount = filtered.filter((r: any) => r.kyc_status === 'verified').length
+  const listingKpis: [string, any][] = [
+    [t('Registered farmers', 'የተመዘገቡ ገበሬዎች'), filtered.length],
+    [t('Active farmers', 'ንቁ ገበሬዎች'), activeCount],
+    [t('KYC verified', 'ማንነታቸው የተረጋገጠ'), filtered.length ? `${Math.round(verifiedCount / filtered.length * 100)}%` : '0%'],
+    [t('Total production', 'ጠቅላላ ምርት'), `${totalProduction.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`],
+    [t('Coffee farm area', 'የቡና እርሻ ስፋት'), `${totalFarmHa.toLocaleString(undefined, { maximumFractionDigits: 1 })} ha`],
+    [t('Avg production / farmer', 'አማካይ ምርት / ገበሬ'), filtered.length ? `${Math.round(totalProduction / filtered.length).toLocaleString()} kg` : '0 kg'],
+  ]
   return (<div>
     {((view === 'all' || view === 'directory') && (<div>
-      <Section title={t('Farmer Directory', 'የገበሬዎች ዝርዝር')} sub={t('Professional outgrower registry — click any farmer to open the full profile: performance, procurement history, coffee quantities, quality and payments.', 'የገበሬ መዝገብ — ሙሉ መገለጫ ለመክፈት ማንኛውንም ገበሬ ይጫኑ፦ አፈጻጸም፣ የግዥ ታሪክ፣ የቡና ብዛት፣ ጥራት እና ክፍያዎች።')}>
-        <T state={_q} rows={rows} onRowClick={(r: any) => setSelected(r)} cols={[['farmer_code', t('Farmer ID', 'የገበሬ መለያ')], ['full_name', t('Name', 'ስም')], ['phone', t('Phone', 'ስልክ')], ['kebele', t('Kebele', 'ቀበሌ')], ['coffee_tree_count', t('Trees', 'ዛፎች')], ['total_plot_ha', t('Farm ha', 'ሄክታር')], ['annual_cherry_cap_kg', t('Cap kg/yr', 'ገደብ ኪ.ግ/ዓመት')], ['delivered_this_season_kg', t('Delivered kg', 'የቀረበ ኪ.ግ')], ['kyc_status', 'KYC']]} />
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+        {listingKpis.map(([l, v]) => <div key={l} className="card !p-3"><div className="lbl">{l}</div><div className="text-lg font-bold mt-1">{String(v)}</div></div>)}
+      </div>
+      <Section title={t('Farmer Listing', 'የገበሬዎች ዝርዝር ሰንጠረዥ')} sub={t('Search, filter, sort and paginate the live outgrower registry. Use View for the full profile, Edit to update the record, or Delete — farmers with history are safely deactivated instead of erased.', 'የቀጥታ አቅራቢ መዝገብን ይፈልጉ፣ ያጣሩ፣ ያደራጁ እና ገጽ ይቀይሩ። ሙሉ መገለጫ ለማየት View፣ መረጃ ለማዘመን Edit፣ ለመሰረዝ Delete ይጠቀሙ — ታሪክ ያላቸው ገበሬዎች ከመጥፋት ይልቅ ይሰናከላሉ።')}
+        action={<button className="btn !py-2" onClick={startAdd}>+ {t('Add Farmer', 'ገበሬ ጨምር')}</button>}>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-3">
+          <Field label={t('Site / Station', 'ጣቢያ')}><select className="inp" value={filters.station} onChange={(e) => setFilters({ ...filters, station: e.target.value })}><option value="">{t('All sites', 'ሁሉም ጣቢያዎች')}</option>{stations.map((s: any) => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}</select></Field>
+          <Field label={t('Region', 'ክልል')}><select className="inp" value={filters.region} onChange={(e) => setFilters({ ...filters, region: e.target.value })}><option value="">{t('All regions', 'ሁሉም ክልሎች')}</option>{options('region').map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
+          <Field label={t('Zone', 'ዞን')}><select className="inp" value={filters.zone} onChange={(e) => setFilters({ ...filters, zone: e.target.value })}><option value="">{t('All zones', 'ሁሉም ዞኖች')}</option>{options('zone').map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
+          <Field label={t('Coffee Variety', 'የቡና ዝርያ')}><select className="inp" value={filters.variety} onChange={(e) => setFilters({ ...filters, variety: e.target.value })}><option value="">{t('All varieties', 'ሁሉም ዝርያዎች')}</option>{options('coffee_variety').map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
+          <Field label={t('Status', 'ሁኔታ')}><select className="inp" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t('All statuses', 'ሁሉም ሁኔታዎች')}</option><option value="Active">{t('Active', 'ንቁ')}</option><option value="Inactive">{t('Inactive', 'ዝግ')}</option></select></Field>
+          <Field label="KYC"><select className="inp" value={filters.kyc} onChange={(e) => setFilters({ ...filters, kyc: e.target.value })}><option value="">{t('All KYC', 'ሁሉም KYC')}</option><option value="verified">{t('Verified', 'ተረጋግጧል')}</option><option value="pending">{t('Pending', 'በመጠበቅ ላይ')}</option><option value="rejected">{t('Rejected', 'ውድቅ')}</option></select></Field>
+        </div>
+        {(filters.station || filters.region || filters.zone || filters.variety || filters.status || filters.kyc) && <button className="btn-ghost !py-1 text-xs mb-2" onClick={() => setFilters({ station: '', region: '', zone: '', variety: '', status: '', kyc: '' })}>{t('Clear filters', 'ማጣሪያዎችን አጽዳ')}</button>}
+        <T state={_q} rows={filtered} pageSize={12} searchPlaceholder={t('Search ID, name, phone, kebele…', 'በመለያ፣ ስም፣ ስልክ፣ ቀበሌ ፈልግ…')} onRowClick={(r: any) => setSelected(r)} cols={[
+          ['farmer_code', t('Farmer ID', 'የገበሬ መለያ')], ['full_name', t('Full Name', 'ሙሉ ስም')], ['phone', t('Phone Number', 'ስልክ ቁጥር')],
+          ['region', t('Region', 'ክልል')], ['zone', t('Zone', 'ዞን')], ['woreda', t('Woreda', 'ወረዳ')], ['kebele', t('Kebele', 'ቀበሌ')],
+          ['site_code', t('Site', 'ጣቢያ')], ['washing_station', t('Washing Station', 'ማጠቢያ ጣቢያ')], ['total_plot_ha', t('Farm Size', 'የእርሻ መጠን')],
+          ['coffee_variety', t('Coffee Variety', 'የቡና ዝርያ')], ['total_production_kg', t('Total Production', 'ጠቅላላ ምርት')],
+          ['registration_date', t('Registration Date', 'የምዝገባ ቀን')], ['status_label', t('Status', 'ሁኔታ')], ['actions', t('Actions', 'እርምጃዎች')],
+        ]} renderCell={(r: any, k: string) => {
+          if (k === 'farmer_code') return <b>{r.farmer_code}</b>
+          if (k === 'total_plot_ha') return `${Number(r.total_plot_ha || 0).toFixed(2)} ha`
+          if (k === 'total_production_kg') return `${Number(r.total_production_kg || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`
+          if (k === 'status_label') return <span className="inline-flex flex-col items-start gap-1"><Badge value={r.is_active ? 'active' : 'inactive'} /><span className="text-[11px]" style={{ color: 'var(--muted)' }}>KYC: {r.kyc_status}</span></span>
+          if (k === 'actions') return <span className="inline-flex gap-1" onClick={(e) => e.stopPropagation()}>
+            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setSelected(r)}>{t('View', 'ዝርዝር')}</button>
+            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => startEdit(r)}>{t('Edit', 'አርትዕ')}</button>
+            <button className="btn-ghost !px-2 !py-1 text-xs" style={{ color: 'var(--danger)' }} onClick={() => { if (window.confirm(`${t('Delete/deactivate farmer', 'ገበሬን መሰረዝ/ማሰናከል')} ${r.farmer_code} — ${r.full_name}?`)) remove.mutate(r) }}>{t('Delete', 'ሰርዝ')}</button>
+          </span>
+          return undefined
+        }} />
       </Section>
-      <Section title={t('New Farmer — Registration Form', 'አዲስ ገበሬ — የምዝገባ ቅጽ')} sub={t('Complete farmer registration. Farmer ID is suggested automatically; the annual cap (anti-illicit-blending) follows the registered plot size.', 'ሙሉ የገበሬ ምዝገባ። የገበሬ መለያ በራስ-ሰር ይጠቆማል፤ ዓመታዊ ገደቡ በተመዘገበው የቦታ መጠን ይወሰናል።')}>
+      <div id="farmer-form">
+      <Section title={editing ? t('Edit Farmer', 'ገበሬ አርትዕ') : t('Add Farmer — Registration Form', 'ገበሬ ጨምር — የምዝገባ ቅጽ')} sub={t('Complete farmer registration and location profile. Farmer ID is suggested automatically for new records; annual cap follows the registered farm size and tree count.', 'ሙሉ የገበሬ ምዝገባ እና የቦታ መገለጫ። ለአዲስ መዝገብ የገበሬ መለያ በራስ-ሰር ይጠቆማል።')}>
         <div className="grid md:grid-cols-4 gap-2">
           <Field label={t('Farmer ID', 'የገበሬ መለያ')}><input className="inp" value={f.farmer_code} onChange={(e) => setF({ ...f, farmer_code: e.target.value })} placeholder={nextCode} /></Field>
           <Field label={t('Full name', 'ሙሉ ስም')}><input className="inp" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></Field>
           <Field label={t('Gender', 'ጾታ')}><select className="inp" value={f.gender} onChange={(e) => setF({ ...f, gender: e.target.value })}><option value="">{t('Select…', 'ምረጥ…')}</option><option value="male">{t('Male', 'ወንድ')}</option><option value="female">{t('Female', 'ሴት')}</option></select></Field>
-          <Field label={t('Phone', 'ስልክ')}><input className="inp" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="0911…" /></Field>
+          <Field label={t('Phone Number', 'ስልክ ቁጥር')}><input className="inp" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="0911…" /></Field>
           <Field label={t('National ID number', 'የብሔራዊ መታወቂያ ቁጥር')}><input className="inp" value={f.national_id_number} onChange={(e) => setF({ ...f, national_id_number: e.target.value })} /></Field>
-          <Field label={t('Station', 'ጣቢያ')}><StationSelect value={f.station} onChange={(v: string) => setF({ ...f, station: v })} /></Field>
+          <Field label={t('Site / Washing Station', 'ጣቢያ / ማጠቢያ ጣቢያ')}><StationSelect value={f.station} onChange={onStation} /></Field>
+          <Field label={t('Region', 'ክልል')}><input className="inp" value={f.region} onChange={(e) => setF({ ...f, region: e.target.value })} /></Field>
+          <Field label={t('Zone', 'ዞን')}><input className="inp" value={f.zone} onChange={(e) => setF({ ...f, zone: e.target.value })} /></Field>
+          <Field label={t('Woreda', 'ወረዳ')}><input className="inp" value={f.woreda} onChange={(e) => setF({ ...f, woreda: e.target.value })} /></Field>
           <Field label={t('Kebele', 'ቀበሌ')}><input className="inp" value={f.kebele} onChange={(e) => setF({ ...f, kebele: e.target.value })} /></Field>
+          <Field label={t('Coffee Variety', 'የቡና ዝርያ')}><input className="inp" value={f.coffee_variety} onChange={(e) => setF({ ...f, coffee_variety: e.target.value })} placeholder="74110 / 74112 / Heirloom Kurume" /></Field>
           <Field label={t('Family size', 'የቤተሰብ ብዛት')}><input className="inp" type="number" value={f.family_size} onChange={(e) => setF({ ...f, family_size: e.target.value })} /></Field>
           <Field label={t('Coffee trees', 'የቡና ዛፎች')}><input className="inp" type="number" value={f.coffee_tree_count} onChange={(e) => setF({ ...f, coffee_tree_count: e.target.value })} /></Field>
-          <Field label={t('Total farm size (ha)', 'ጠቅላላ የእርሻ መጠን (ሄክታር)')}><input className="inp" type="number" step="0.01" value={f.total_plot_ha} onChange={(e) => setF({ ...f, total_plot_ha: e.target.value })} /></Field>
+          <Field label={t('Farm Size (ha)', 'የእርሻ መጠን (ሄክታር)')}><input className="inp" type="number" step="0.01" value={f.total_plot_ha} onChange={(e) => setF({ ...f, total_plot_ha: e.target.value })} /></Field>
           <Field label={t('Annual cherry cap (kg)', 'ዓመታዊ የቼሪ ገደብ (ኪ.ግ)')}><input className="inp" type="number" value={f.annual_cherry_cap_kg} onChange={(e) => setF({ ...f, annual_cherry_cap_kg: e.target.value })} /></Field>
           <Field label={t('KYC status', 'የማንነት ሁኔታ')}><select className="inp" value={f.kyc_status} onChange={(e) => setF({ ...f, kyc_status: e.target.value })}><option value="pending">{t('Pending', 'በመጠበቅ ላይ')}</option><option value="verified">{t('Verified', 'ተረጋግጧል')}</option><option value="rejected">{t('Rejected', 'ውድቅ ተደርጓል')}</option></select></Field>
+          <Field label={t('Status', 'ሁኔታ')}><select className="inp" value={f.is_active ? 'active' : 'inactive'} onChange={(e) => setF({ ...f, is_active: e.target.value === 'active' })}><option value="active">{t('Active', 'ንቁ')}</option><option value="inactive">{t('Inactive', 'ዝግ')}</option></select></Field>
         </div>
-        <button className="btn mt-3" disabled={!f.full_name || !f.station} onClick={() => create.mutate()}>{t('Register farmer', 'ገበሬ መዝግብ')}</button>
-        {(!f.full_name || !f.station) && <span className="text-xs ml-2" style={{ color: 'var(--muted)' }}>{t('Full name and station are required.', 'ሙሉ ስም እና ጣቢያ ያስፈልጋሉ።')}</span>}
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button className="btn" disabled={!f.full_name || !f.station || save.isPending} onClick={() => save.mutate()}>{editing ? t('Save changes', 'ለውጦችን አስቀምጥ') : t('Register farmer', 'ገበሬ መዝግብ')}</button>
+          {editing && <button className="btn-ghost" onClick={() => { setEditing(null); setF(empty) }}>{t('Cancel edit', 'አርትዕ ሰርዝ')}</button>}
+          {(!f.full_name || !f.station) && <span className="text-xs self-center" style={{ color: 'var(--muted)' }}>{t('Full name and station are required.', 'ሙሉ ስም እና ጣቢያ ያስፈልጋሉ።')}</span>}
+        </div>
       </Section>
+      </div>
     </div>))}
     {((view === 'all' || view === 'gis') && (<Section title={t('Farm GIS & EUDR — Map, Plots & Documents', 'የእርሻ ካርታና EUDR — ካርታ፣ ቦታዎችና ሰነዶች')} sub={t('GeoJSON farm polygons · certifications · Due Diligence Statements', 'የእርሻ ካርታዎች · የምስክር ወረቀቶች · የEUDR መግለጫዎች')}>
       <FarmerMap plots={plots.rows} />

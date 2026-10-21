@@ -115,7 +115,10 @@ class Command(BaseCommand):
                 ("Zinash Worku", "female"), ("Mulugeta Desta", "male")], start=1):
             farmer, _ = Farmer.objects.get_or_create(farmer_code=f"FRM-2026-02{i:02d}", defaults={
                 "full_name": name, "gender": gender, "phone": f"092{rng.randint(1000000, 9999999)}",
-                "station": ben, "kebele": "Daye", "family_size": rng.randint(3, 8),
+                "station": ben, "kebele": "Daye",
+                "region": "Sidama", "zone": "Eastern Sidama", "woreda": "Bensa",
+                "coffee_variety": "Heirloom Kurume",
+                "family_size": rng.randint(3, 8),
                 "coffee_tree_count": rng.randint(1500, 4200),
                 "total_plot_ha": Decimal(rng.choice(["0.950", "1.400", "1.850", "2.200"])),
                 "annual_cherry_cap_kg": Decimal(rng.randint(4500, 10000)), "kyc_status": "verified"})

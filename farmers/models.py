@@ -40,7 +40,12 @@ class Farmer(TimeStampedUUIDModel):
     phone = models.CharField(max_length=32, blank=True, db_index=True)
     national_id_number = models.CharField(max_length=64, blank=True)
     station = models.ForeignKey("core.Station", on_delete=models.PROTECT, related_name="farmers")
+    region = models.CharField(max_length=120, blank=True, help_text="Farmer's region (e.g. Sidama)")
+    zone = models.CharField(max_length=120, blank=True, help_text="Farmer's zone (e.g. Central Sidama)")
+    woreda = models.CharField(max_length=120, blank=True, help_text="Farmer's woreda (e.g. Aleta Wondo)")
     kebele = models.CharField(max_length=120, blank=True)
+    coffee_variety = models.CharField(max_length=120, blank=True,
+                                      help_text="Primary coffee variety grown (e.g. 74110, Heirloom Kurume)")
     family_size = models.PositiveIntegerField(default=1)
     coffee_tree_count = models.PositiveIntegerField(default=0)
     total_plot_ha = models.DecimalField(max_digits=8, decimal_places=3, default=0)
