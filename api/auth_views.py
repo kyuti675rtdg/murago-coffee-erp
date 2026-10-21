@@ -79,15 +79,31 @@ def provision_staff(request):
 
     stations = {s.code: s for s in Station.objects.all()}
     roles = {r.code: r for r in Role.objects.all()}
-    created, skipped, deactivated = [], [], []
+    created, skipped, deactivated, reset = [], [], [], []
     for spec in request.data.get("accounts", []):
         username = (spec.get("username") or "").strip()
         role = roles.get(spec.get("role") or "")
         if not username or role is None or not spec.get("password"):
             skipped.append({"username": username, "reason": "missing username/password or unknown role"})
             continue
-        if User.objects.filter(username=username).exists():
-            skipped.append({"username": username, "reason": "already exists — untouched"})
+        existing = User.objects.filter(username=username).first()
+        if existing is not None:
+            if not spec.get("reset"):
+                skipped.append({"username": username, "reason": "already exists — untouched"})
+                continue
+            # Explicit superuser-requested reset (e.g. recovering an account
+            # whose initial provisioning was interrupted before its
+            # credentials were delivered). Never implied, always per-spec.
+            existing.set_password(spec["password"])
+            existing.is_active = True
+            existing.save()
+            station = stations.get(spec.get("station") or "") if spec.get("station") else None
+            UserStationRole.objects.get_or_create(user=existing, role=role, station=station)
+            cred, _ = SignatureCredential.objects.get_or_create(user=existing, defaults={"pin_hash": ""})
+            if spec.get("pin"):
+                cred.set_pin(str(spec["pin"]))
+                cred.save()
+            reset.append(username)
             continue
         station = stations.get(spec.get("station") or "") if spec.get("station") else None
         user = User.objects.create_user(
@@ -106,4 +122,4 @@ def provision_staff(request):
             user.is_active = False
             user.save(update_fields=["is_active"])
             deactivated.append(username)
-    return Response({"created": created, "skipped": skipped, "deactivated": deactivated})
+    return Response({"created": created, "skipped": skipped, "deactivated": deactivated, "reset": reset})

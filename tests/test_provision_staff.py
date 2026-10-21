@@ -57,3 +57,14 @@ class ProvisionStaffTests(TestCase):
         self.assertEqual(ok.status_code, 200)
         bad = anon.post("/api/auth/login/", {"username": "weighbridge.mur", "password": "Different!Pass-2"}, format="json")
         self.assertEqual(bad.status_code, 401)
+
+    def test_explicit_reset_recovers_interrupted_account(self):
+        self.client.force_authenticate(self.admin)
+        self.client.post("/api/admin/provision-staff/", self._batch(), format="json")
+        batch = {"accounts": [{"username": "weighbridge.mur", "password": "Recovered!Pass-3",
+                               "pin": "8642", "role": "weighing_clerk", "station": "MUR", "reset": True}]}
+        r = self.client.post("/api/admin/provision-staff/", batch, format="json")
+        self.assertEqual(r.json()["reset"], ["weighbridge.mur"])
+        anon = APIClient()
+        ok = anon.post("/api/auth/login/", {"username": "weighbridge.mur", "password": "Recovered!Pass-3"}, format="json")
+        self.assertEqual(ok.status_code, 200)
