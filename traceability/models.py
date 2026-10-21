@@ -51,3 +51,33 @@ class ComminglingCheck(TimeStampedUUIDModel):
     checked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                    on_delete=models.SET_NULL, related_name="commingling_checks")
     notes = models.TextField(blank=True)
+
+
+class MassBalanceCheck(TimeStampedUUIDModel):
+    """Phase 4 — end-to-end mass-balance reconciliation for a lot.
+
+    One row per chain segment (intake->cherry, cherry->parchment,
+    parchment->green, milling, green->bagged, bagged->exported) with the
+    actual output vs the benchmark-expected output and a flagged status.
+    Variances are FLAGGED (ok/warning/critical), never silently allowed.
+    """
+
+    class Status(models.TextChoices):
+        OK = "ok", "Within tolerance"
+        WARNING = "warning", "Variance warning"
+        CRITICAL = "critical", "Critical variance"
+        NO_DATA = "no_data", "Insufficient data"
+
+    lot = models.ForeignKey("processing.Lot", on_delete=models.CASCADE, related_name="mass_balance_checks")
+    segment = models.CharField(max_length=48, db_index=True)
+    input_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    output_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    expected_output_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    variance_kg = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    variance_pct = models.DecimalField(max_digits=8, decimal_places=2, default=0,
+                                       help_text="Deviation of output from expected, % of expected")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.NO_DATA, db_index=True)
+    notes = models.TextField(blank=True)
+
+    class Meta(TimeStampedUUIDModel.Meta):
+        indexes = [models.Index(fields=["lot", "segment"])]

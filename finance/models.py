@@ -53,6 +53,16 @@ class JournalEntry(TimeStampedUUIDModel):
         return all(t["debit"] == t["credit"] and t["debit"] > 0 for t in self.totals_by_currency().values()) \
             and self.lines.exists()
 
+    def save(self, *args, **kwargs):
+        # Phase 4 P0: double-entry balance enforced at MODEL level — an entry
+        # may only be saved as POSTED when debits == credits per currency.
+        if self.status == self.Status.POSTED and self.pk is not None and not self.is_balanced():
+            from django.core.exceptions import ValidationError
+            totals = {c: (str(t["debit"]), str(t["credit"])) for c, t in self.totals_by_currency().items()}
+            raise ValidationError(
+                f"Journal {self.entry_number} cannot be POSTED: debits != credits per currency {totals}.")
+        super().save(*args, **kwargs)
+
 
 class JournalLine(TimeStampedUUIDModel):
     """One debit/credit line of a journal entry (multi-currency)."""

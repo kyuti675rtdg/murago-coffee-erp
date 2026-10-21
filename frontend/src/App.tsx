@@ -268,7 +268,22 @@ function Traceability() {
         {edges.length ? edges.map((e: any) => <div key={e.id} className="text-sm py-1 border-b border-stone-100">🌱 {byId[e.parent_lot]?.lot_code ?? e.parent_lot} <span className="text-stone-400">—{e.edge_type} {e.weight_kg} kg (ratio {e.ratio})→</span> {byId[e.child_lot]?.lot_code ?? e.child_lot}</div>) : <p className="text-sm text-stone-400">No split/blend edges for this lot yet — use the Lot Studio.</p>}
       </div>)}
     </Section>
+    <Section title="Mass-Balance Reconciliation (Phase 4)" sub="intake → cherry → parchment → green → bagged → exported; variances flagged ok / warning / critical, never silently allowed">
+      <MassBalanceRunner />
+    </Section>
     <Section title="Commingling Risk & Audit Monitor"><T rows={checks.rows} cols={[['checked_at', 'Checked'], ['location_label', 'Location'], ['certified_separation_ok', 'Separation OK'], ['result', 'Result']]} /></Section>
+  </div>)
+}
+
+
+function MassBalanceRunner() {
+  const lots = useList('/lots/')
+  const toast = useToast()
+  const [lotId, setLotId] = useState(''); const [res, setRes] = useState<any>(null)
+  const run = useMutation({ mutationFn: () => post(`/lots/${lotId}/mass-balance/`, {}), onSuccess: (d: any) => { setRes(d); toast(`Mass balance for ${d.lot}: worst = ${d.worst_status}`) }, onError: (e: any) => toast(errMsg(e), false) })
+  return (<div><div className="flex gap-2 items-end"><div className="w-72"><Field label="Lot"><select className="inp" value={lotId} onChange={(e) => setLotId(e.target.value)}><option value="">Select lot…</option>{lots.rows.map((l: any) => <option key={l.id} value={l.id}>{l.lot_code}</option>)}</select></Field></div>
+    <button className="btn" onClick={() => run.mutate()}>Run mass-balance</button></div>
+    {res && <div className="mt-2">{res.checks.map((ch: any) => <div key={ch.id} className="text-sm py-1 border-b border-stone-100">{ch.status === 'ok' ? '✅' : ch.status === 'warning' ? '🟠' : ch.status === 'critical' ? '🔴' : '⚪'} <b>{ch.segment}</b> — in {ch.input_kg} kg · out {ch.output_kg} kg · expected {ch.expected_output_kg} kg · variance {ch.variance_pct}%</div>)}</div>}
   </div>)
 }
 
@@ -494,8 +509,25 @@ function ExportPage() {
     <Section title="Container Loading & Customs Documentation Suite (Step 10)">
       <T rows={containers.rows} cols={[['container_number', 'Container'], ['seal_number', 'Seal'], ['total_bags', 'Bags'], ['total_net_kg', 'Net kg'], ['stuffed_on', 'Stuffed'], ['status', 'Status']]} />
       <T rows={docs.rows} cols={[['doc_type', 'Document'], ['document_number', 'Doc #'], ['status', 'Status']]} />
+      <ContainerReadiness />
       <p className="text-xs text-stone-500">Generated document types: Commercial Invoice · Packing List · ICO Certificate of Origin · ECTA clearance · Phytosanitary certificate · EUDR GeoJSON dossier (payloads stored on each ExportDocument).</p>
     </Section></div>)
+}
+
+
+function ContainerReadiness() {
+  const containers = useList('/containers/')
+  const toast = useToast(); const qc = useQueryClient()
+  const [chk, setChk] = useState<any>(null)
+  const check = useMutation({ mutationFn: (id: string) => api(`/containers/${id}/checklist/`), onSuccess: (d: any) => setChk(d), onError: (e: any) => toast(errMsg(e), false) })
+  const ready = useMutation({ mutationFn: (id: string) => post(`/containers/${id}/mark-ready/`, {}), onSuccess: () => { toast('Container sealed — document checklist complete'); qc.invalidateQueries() }, onError: (e: any) => toast(errMsg(e), false) })
+  return (<div className="mt-3"><h4 className="font-semibold text-sm">Export document completeness checklist (Phase 4 gate)</h4>
+    {containers.rows.map((ct: any) => <div key={ct.id} className="flex flex-wrap gap-2 items-center py-1.5 border-b border-stone-100 text-sm"><span className="font-medium">{ct.container_number}</span><span>{ct.status}</span>
+      <button className="btn-ghost !py-1 text-xs" onClick={() => check.mutate(ct.id)}>Check documents</button>
+      {ct.status === 'loading' && <button className="btn !py-1 text-xs" onClick={() => ready.mutate(ct.id)}>Mark ready (seal)</button>}</div>)}
+    {chk && <div className="mt-2 text-sm bg-stone-50 rounded-lg p-3">{chk.items.map((i: any) => <div key={i.doc_type}>{i.present ? '✅' : '❌'} {i.label}</div>)}
+      <div className="mt-1 font-semibold">{chk.complete ? 'Checklist COMPLETE — ready to seal' : `Missing: ${chk.missing.join(', ')}`}</div></div>}
+  </div>)
 }
 
 /* ---------------- 16. Logistics ---------------- */
@@ -521,6 +553,7 @@ function Finance() {
       <T rows={accounts.rows} cols={[['code', 'Code'], ['name', 'Account'], ['account_type', 'Type'], ['currency', 'Ccy']]} />
       <T rows={journals.rows} cols={[['entry_number', 'Entry'], ['entry_date', 'Date'], ['description', 'Description'], ['status', 'Status']]} />
       <T rows={lines.rows} cols={[['debit', 'Debit'], ['credit', 'Credit'], ['currency', 'Ccy'], ['exchange_rate', 'FX'], ['memo', 'Memo']]} />
+      <JournalPostControls />
       <h4 className="font-semibold text-sm mt-2">AR / AP</h4><T rows={arap.rows} cols={[['kind', 'Kind'], ['reference', 'Ref'], ['amount', 'Amount'], ['amount_settled', 'Settled'], ['currency', 'Ccy'], ['due_on', 'Due'], ['status', 'Status']]} />
     </Section>
     <Section title="Landed Cost & Lot Profitability Analyzer — activity-based lot costing">
@@ -528,6 +561,17 @@ function Finance() {
       {cost.data && <p className="text-sm mt-2">Landed cost for <b>{cost.data.lot}</b>: <b>{cost.data.landed_cost_per_kg ?? '—'} / kg</b> across {cost.data.allocations.length} allocations</p>}
       <T rows={allocs.rows} cols={[['component', 'Cost component'], ['amount', 'Amount'], ['currency', 'Ccy'], ['allocated_on', 'Date'], ['source_reference', 'Source ref']]} />
     </Section></div>)
+}
+
+
+function JournalPostControls() {
+  const journals = useList('/journal-entries/')
+  const toast = useToast(); const qc = useQueryClient()
+  const postJ = useMutation({ mutationFn: (id: string) => post(`/journal-entries/${id}/post-entry/`, {}), onSuccess: () => { toast('Journal posted (debits = credits verified)'); qc.invalidateQueries() }, onError: (e: any) => toast(`Posting blocked: ${errMsg(e)}`, false) })
+  const drafts = journals.rows.filter((j: any) => j.status === 'draft')
+  if (!drafts.length) return null
+  return (<div className="mt-2">{drafts.map((j: any) => <div key={j.id} className="flex gap-2 items-center py-1 text-sm"><span>{j.entry_number} — {j.description}</span>
+    <button className="btn !py-1 text-xs" onClick={() => postJ.mutate(j.id)}>Post journal (balance check)</button></div>)}</div>)
 }
 
 /* ---------------- 18. Payments ---------------- */
@@ -654,6 +698,32 @@ function Users() {
     </Section></div>)
 }
 
+
+/* ---------------- Phase 4: Notifications bell (Module 24) ---------------- */
+function NotificationsBell({ go }: { go: (page: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const qc = useQueryClient()
+  const unread = useQuery({ queryKey: ['notif-unread'], queryFn: () => api('/api/notifications/unread-count/'), refetchInterval: 30000 })
+  const items = useList('/notifications/')
+  const mark = useMutation({ mutationFn: (id: string) => post(`/notifications/${id}/mark-read/`, {}), onSuccess: () => qc.invalidateQueries() })
+  const markAll = useMutation({ mutationFn: () => post('/notifications/mark-all-read/', {}), onSuccess: () => qc.invalidateQueries() })
+  const count = unread.data?.unread ?? 0
+  return (<div className="relative">
+    <button className="btn-ghost !px-2.5" onClick={() => setOpen(!open)} title="Notifications">🔔{count > 0 && <span className="ml-1 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{count}</span>}</button>
+    {open && (<div className="absolute right-0 mt-2 w-80 max-h-96 overflow-auto bg-white rounded-xl shadow-xl border border-stone-200 z-50 text-left">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-stone-100"><b className="text-sm">Notifications</b>
+        <button className="text-xs text-amber-700" onClick={() => markAll.mutate()}>Mark all read</button></div>
+      {items.rows.length ? items.rows.slice(0, 20).map((n: any) => (
+        <button key={n.id} className={`block w-full text-left px-3 py-2 border-b border-stone-50 hover:bg-stone-50 ${n.is_read ? 'opacity-60' : ''}`}
+          onClick={() => { mark.mutate(n.id); if (n.link) go(n.link); setOpen(false) }}>
+          <div className="text-sm font-medium">{n.severity === 'critical' ? '🔴' : n.severity === 'warning' ? '🟠' : '🔵'} {n.title}</div>
+          <div className="text-xs text-stone-500">{n.body}</div>
+          <div className="text-[10px] text-stone-400">{n.category} · {String(n.created_at).slice(0, 16).replace('T', ' ')}</div>
+        </button>)) : <p className="text-sm text-stone-400 px-3 py-3">No notifications.</p>}
+    </div>)}
+  </div>)
+}
+
 /* ---------------- shell ---------------- */
 const MODULES: [string, string, React.ComponentType][] = [
   ['dashboard', '1 · Executive Dashboard', Dashboard], ['farmers', '2 · Farmer Management', Farmers],
@@ -693,7 +763,8 @@ export default function App() {
       </aside>
       <main className="flex-1 min-w-0 p-3 md:p-5">
         <div className="flex items-center gap-3 mb-4"><button className="btn-ghost md:hidden" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
-          <h2 className="text-lg md:text-xl font-bold text-stone-800">{MODULES.find(([id]) => id === page)?.[1]}</h2></div>
+          <h2 className="text-lg md:text-xl font-bold text-stone-800 flex-1">{MODULES.find(([id]) => id === page)?.[1]}</h2>
+          <NotificationsBell go={setPage} /></div>
         <Active />
       </main>
     </div>

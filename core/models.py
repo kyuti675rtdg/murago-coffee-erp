@@ -195,3 +195,37 @@ class DashboardSnapshot(TimeStampedUUIDModel):
 
     class Meta(TimeStampedUUIDModel.Meta):
         constraints = [models.UniqueConstraint(fields=["station", "snapshot_date"], name="uniq_snapshot_station_date")]
+
+
+class Notification(TimeStampedUUIDModel):
+    """Phase 4 (Module 24) — in-app notification centre.
+
+    Created by anomaly/approval/payroll/export services; delivered via
+    /api/notifications/ and the frontend bell. user=None means broadcast to
+    the station's role holders (resolved at creation time by core.notify).
+    """
+
+    class Category(models.TextChoices):
+        ANOMALY = "anomaly", "Anomaly alert"
+        APPROVAL = "approval", "Approval"
+        PAYROLL = "payroll", "Payroll"
+        EXPORT = "export", "Export"
+        SYSTEM = "system", "System"
+
+    class Severity(models.TextChoices):
+        INFO = "info", "Info"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    station = models.ForeignKey(Station, null=True, blank=True, on_delete=models.SET_NULL, related_name="notifications")
+    category = models.CharField(max_length=16, choices=Category.choices, db_index=True)
+    severity = models.CharField(max_length=16, choices=Severity.choices, default=Severity.INFO, db_index=True)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    link = models.CharField(max_length=200, blank=True, help_text="Frontend page id, e.g. resources / payroll / export")
+    is_read = models.BooleanField(default=False, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(TimeStampedUUIDModel.Meta):
+        indexes = [models.Index(fields=["user", "is_read", "-created_at"])]

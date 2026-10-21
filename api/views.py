@@ -45,6 +45,7 @@ REGISTRY = [
     ("roles", core_m.Role), ("user-station-roles", core_m.UserStationRole),
     ("signature-credentials", core_m.SignatureCredential), ("dual-signoffs", core_m.DualSignOff),
     ("audit-logs", core_m.AuditLog), ("dashboard-snapshots", core_m.DashboardSnapshot),
+    ("notifications", core_m.Notification),
     ("farmers", farmers_m.Farmer), ("farmer-documents", farmers_m.FarmerDocument),
     ("farm-plots", farmers_m.FarmPlot), ("certifications", farmers_m.Certification),
     ("eudr-statements", farmers_m.EUDRDueDiligenceStatement),
@@ -59,6 +60,7 @@ REGISTRY = [
     ("milling-work-orders", drymill_m.MillingWorkOrder), ("milling-outputs", drymill_m.MillingOutput),
     ("grading-records", drymill_m.GradingRecord), ("screen-distributions", drymill_m.ScreenDistribution),
     ("lot-lineage", trace_m.LotLineageEdge), ("commingling-checks", trace_m.ComminglingCheck),
+    ("mass-balance-checks", trace_m.MassBalanceCheck),
     ("physical-analyses", quality_m.PhysicalAnalysis), ("cupping-scores", quality_m.CuppingScore),
     ("quality-approvals", quality_m.QualityApproval),
     ("stores", warehouse_m.Store), ("bins", warehouse_m.Bin),
@@ -239,6 +241,15 @@ class LotViewSet(StationScopedViewSet):
                          "edges": [{"parent": e.parent_lot.lot_code, "weight_kg": str(e.weight_kg),
                                     "ratio": str(e.ratio)} for e in edges]}, status=201)
 
+    @action(detail=True, methods=["get", "post"], url_path="mass-balance")
+    def mass_balance(self, request, pk=None):
+        """Phase 4: run + persist the end-to-end mass-balance reconciliation."""
+        from traceability.mass_balance import run_mass_balance, worst_status
+        lot = self.get_object()
+        checks = run_mass_balance(lot, actor=request.user)
+        return Response({"lot": lot.lot_code, "worst_status": worst_status(checks),
+                         "checks": serializer_for(trace_m.MassBalanceCheck)(checks, many=True).data})
+
     @action(detail=True, methods=["get"])
     def traceability(self, request, pk=None):
         lot = self.get_object()
@@ -331,6 +342,14 @@ def _thresholds(station_id):
     return cfg.max_fuel_ratio_l_per_kg, cfg.max_water_ratio_l_per_kg
 
 
+def _notify_anomaly(entry, kind, ratio):
+    from core.notify import notify_station_roles
+    notify_station_roles(entry.station, ["station_supervisor", "admin"], category="anomaly",
+                         severity="warning", link="resources",
+                         title=f"{kind} ratio anomaly at {entry.station} on {entry.entry_date}",
+                         body=f"{kind} ratio {ratio} exceeds the configured threshold.")
+
+
 class FuelEntryViewSet(StationScopedViewSet):
     model = resources_m.FuelRegisterEntry
 
@@ -342,6 +361,8 @@ class FuelEntryViewSet(StationScopedViewSet):
         resp.data["fuel_ratio"] = str(result.ratio) if result.ratio is not None else None
         resp.data["is_anomaly"] = result.is_anomaly
         resp.data["note"] = result.note
+        if result.is_anomaly:
+            _notify_anomaly(entry, "Fuel", result.ratio)
         return resp
 
 
@@ -360,6 +381,8 @@ class WaterEntryViewSet(StationScopedViewSet):
         resp.data["water_ratio"] = str(result.ratio) if result.ratio is not None else None
         resp.data["is_anomaly"] = result.is_anomaly
         resp.data["note"] = result.note
+        if result.is_anomaly:
+            _notify_anomaly(entry, "Water", result.ratio)
         return resp
 
 
@@ -393,7 +416,29 @@ class AttendanceSheetViewSet(StationScopedViewSet):
             period = payroll_engine.generate_payroll(sheet, prepared_by=prepared)
         except payroll_engine.PayrollError as exc:
             return _err(str(exc))
+        from core.notify import notify_station_roles
+        notify_station_roles(sheet.station, ["finance_manager", "admin"], category="payroll",
+                             severity="info", link="payroll",
+                             title=f"Payroll generated for {sheet.ethiopian_month}/{sheet.ethiopian_year}",
+                             body=f"Gross {period.total_gross} · Net {period.total_net} ETB — approval pending.")
         return Response(serializer_for(payroll_m.PayrollPeriod)(period).data, status=201)
+
+
+class AttendanceEntryViewSet(StationScopedViewSet):
+    """Grid cells are upserted by (sheet, worker, day) — re-saving the 30-day
+    grid updates cells instead of failing on the unique constraint (Phase 4 fix)."""
+    model = hr_m.AttendanceEntry
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        try:
+            obj, created = self.model.objects.update_or_create(
+                sheet_id=data.get("sheet"), worker_id=data.get("worker"), day=data.get("day"),
+                defaults={"mark": data.get("mark", "present"), "hours": data.get("hours", 0),
+                          "pieces": data.get("pieces", 0)})
+        except Exception as exc:
+            return _err(str(exc))
+        return Response(serializer_for(self.model)(obj).data, status=201 if created else 200)
 
 
 class PayrollPeriodViewSet(StationScopedViewSet):
@@ -445,6 +490,140 @@ class CuppingScoreViewSet(StationScopedViewSet):
             lot=cupping.lot, cupping=cupping, grade=grade, decision=decision,
             decided_by=request.user, remarks=request.data.get("remarks", ""))
         return Response(serializer_for(quality_m.QualityApproval)(approval).data, status=201)
+
+
+# ---------------------------------------------------------------- Phase 4 viewsets
+class NotificationViewSet(viewsets.ModelViewSet):
+    """Module 24 — users see and manage ONLY their own notifications."""
+    permission_classes = [IsAuthenticated]
+    model = core_m.Notification
+
+    def get_serializer_class(self):
+        return serializer_for(self.model)
+
+    def get_queryset(self):
+        return self.model.objects.filter(user=self.request.user).order_by("-created_at")
+
+    @action(detail=True, methods=["post"], url_path="mark-read")
+    def mark_read(self, request, pk=None):
+        n = self.get_object()
+        n.is_read = True
+        n.read_at = timezone.now()
+        n.save(update_fields=["is_read", "read_at", "updated_at"])
+        return Response(serializer_for(self.model)(n).data)
+
+    @action(detail=False, methods=["post"], url_path="mark-all-read")
+    def mark_all_read(self, request):
+        updated = self.get_queryset().filter(is_read=False).update(is_read=True, read_at=timezone.now())
+        return Response({"marked_read": updated})
+
+    @action(detail=False, methods=["get"], url_path="unread-count")
+    def unread_count(self, request):
+        return Response({"unread": self.get_queryset().filter(is_read=False).count()})
+
+
+class JournalEntryViewSet(StationScopedViewSet):
+    model = finance_m.JournalEntry
+
+    @action(detail=True, methods=["post"], url_path="post-entry")
+    def post_entry(self, request, pk=None):
+        entry = self.get_object()
+        if entry.status == finance_m.JournalEntry.Status.POSTED:
+            return _err("Journal is already posted.")
+        if not entry.is_balanced():
+            totals = {c: {"debit": str(t["debit"]), "credit": str(t["credit"])}
+                      for c, t in entry.totals_by_currency().items()}
+            return _err(f"Journal cannot be posted: debits != credits per currency: {totals}")
+        entry.status = finance_m.JournalEntry.Status.POSTED
+        try:
+            entry.save(update_fields=["status", "updated_at"])
+        except Exception as exc:
+            return _err(str(exc))
+        return Response(serializer_for(self.model)(entry).data)
+
+
+class JournalLineViewSet(StationScopedViewSet):
+    model = finance_m.JournalLine
+
+    def _check_unposted(self, entry_id):
+        entry = finance_m.JournalEntry.objects.filter(pk=entry_id).first()
+        if entry and entry.status == finance_m.JournalEntry.Status.POSTED:
+            from rest_framework.exceptions import ValidationError as DRFValidationError
+            raise DRFValidationError("Lines of a POSTED journal cannot be modified; void it instead.")
+
+    def perform_create(self, serializer):
+        self._check_unposted(serializer.validated_data.get("entry").id if serializer.validated_data.get("entry") else None)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._check_unposted(serializer.instance.entry_id)
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        self._check_unposted(instance.entry_id)
+        super().perform_destroy(instance)
+
+
+class PurchaseVoucherViewSet(StationScopedViewSet):
+    model = procurement_m.PurchaseVoucher
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        from procurement.approvals import ApprovalError, approve_voucher
+        voucher = self.get_object()
+        try:
+            approve_voucher(voucher, approved_by=request.user)
+        except ApprovalError as exc:
+            return _err(str(exc), status.HTTP_403_FORBIDDEN)
+        from core.notify import notify_user
+        if voucher.created_by_id:
+            notify_user(voucher.created_by, category="approval", link="procurement",
+                        title=f"Voucher {voucher.voucher_number} approved",
+                        body=f"{voucher.total_amount} ETB approved by {request.user.username}.")
+        return Response(serializer_for(self.model)(voucher).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        from procurement.approvals import ApprovalError, reject_voucher
+        voucher = self.get_object()
+        try:
+            reject_voucher(voucher, rejected_by=request.user)
+        except ApprovalError as exc:
+            return _err(str(exc))
+        return Response(serializer_for(self.model)(voucher).data)
+
+
+class StockAuditViewSet(StationScopedViewSet):
+    model = inventory_m.StockAudit
+
+    @action(detail=True, methods=["post"])
+    def reconcile(self, request, pk=None):
+        from inventory.reconcile import ReconcileError, reconcile_audit
+        audit = self.get_object()
+        try:
+            summary = reconcile_audit(audit, reconciled_by=request.user)
+        except ReconcileError as exc:
+            return _err(str(exc))
+        return Response(summary)
+
+
+class ContainerViewSet(StationScopedViewSet):
+    model = exports_m.ContainerLoading
+
+    @action(detail=True, methods=["get"])
+    def checklist(self, request, pk=None):
+        from exports.checklist import document_checklist
+        return Response(document_checklist(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="mark-ready")
+    def mark_ready(self, request, pk=None):
+        from exports.checklist import ChecklistError, mark_container_ready
+        container = self.get_object()
+        try:
+            mark_container_ready(container)
+        except ChecklistError as exc:
+            return _err(str(exc))
+        return Response(serializer_for(self.model)(container).data)
 
 
 # ---------------------------------------------------------------- dashboard / BI
@@ -619,8 +798,12 @@ CUSTOM_VIEWSETS = {
     "lots": LotViewSet, "drying-handovers": DryingHandoverViewSet,
     "stock-receipts": StockReceiptViewSet, "stock-transfers": StockTransferViewSet,
     "fuel-entries": FuelEntryViewSet, "water-entries": WaterEntryViewSet,
-    "attendance-sheets": AttendanceSheetViewSet, "payroll-periods": PayrollPeriodViewSet,
+    "attendance-sheets": AttendanceSheetViewSet, "attendance-entries": AttendanceEntryViewSet,
+    "payroll-periods": PayrollPeriodViewSet,
     "payroll-lines": PayrollLineViewSet, "cupping-scores": CuppingScoreViewSet,
+    "notifications": NotificationViewSet, "journal-entries": JournalEntryViewSet,
+    "journal-lines": JournalLineViewSet, "purchase-vouchers": PurchaseVoucherViewSet,
+    "stock-audits": StockAuditViewSet, "containers": ContainerViewSet,
 }
 
 

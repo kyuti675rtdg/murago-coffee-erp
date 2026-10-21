@@ -34,6 +34,23 @@ GIS_AVAILABLE = _gis_available()
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-insecure-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+
+# Phase 4 production hardening — all behind env flags so local dev is unchanged.
+# Production (Render) sets MURAGO_HARDEN=1.
+HARDEN = os.environ.get("MURAGO_HARDEN", "0") == "1"
+SECURE_SSL_REDIRECT = HARDEN
+SESSION_COOKIE_SECURE = HARDEN
+CSRF_COOKIE_SECURE = HARDEN
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False  # SPA reads CSRF cookie if session auth is used; token auth is primary
+SECURE_HSTS_SECONDS = 31536000 if HARDEN else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = HARDEN
+SECURE_HSTS_PRELOAD = HARDEN
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if HARDEN else None
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h]
 
 INSTALLED_APPS = [
