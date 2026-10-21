@@ -7,6 +7,14 @@ import { LangProvider } from './i18n'
 import './index.css'
 
 if ('serviceWorker' in navigator) {
+  // When a new service worker takes control (a fresh deployment), reload
+  // once so the open tab can never keep running a stale build.
+  let swReloaded = false
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swReloaded) return
+    swReloaded = true
+    window.location.reload()
+  })
   window.addEventListener('load', () => navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(() => {}))
 }
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 15000 } } })
