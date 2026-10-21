@@ -20,3 +20,11 @@ export const useAuth = create<AuthState>((set) => ({
     catch { set({ user: null, ready: true }) }
   },
 }))
+
+/* Workspace station context — set by the topbar station switcher, persisted,
+   and used as the default station in form StationSelects across the app. */
+interface StationCtx { stationId: string; setStationId: (id: string) => void }
+export const useStationCtx = create<StationCtx>((set) => ({
+  stationId: (() => { try { return localStorage.getItem('murago_station') || '' } catch { return '' } })(),
+  setStationId: (id) => { try { id ? localStorage.setItem('murago_station', id) : localStorage.removeItem('murago_station') } catch { /* ignore */ } set({ stationId: id }) },
+}))

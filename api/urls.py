@@ -14,6 +14,7 @@ urlpatterns = [
     path("users/", auth_views.users_list),
     path("dashboard/", views.dashboard),
     path("postgis/", views.postgis_status),
+    path("backups/", views.backups_list),
     path("reports/run/", views.run_report),
     path("lot-costing/<uuid:lot_id>/", views.lot_costing),
     path("sync/push/", views.sync_push),

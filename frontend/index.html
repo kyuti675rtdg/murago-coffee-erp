@@ -3,10 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1c1917" />
+    <meta id="meta-theme-color" name="theme-color" content="#f4f4f2" />
     <link rel="manifest" href="/app/manifest.json" />
     <link rel="icon" type="image/svg+xml" href="/app/icon.svg" />
     <title>Murago Coffee ERP — Bean Power ERP</title>
+    <script>
+      /* Theme init — runs before first paint to prevent flash of wrong theme.
+         Persisted choice wins; otherwise follow prefers-color-scheme. */
+      (function () {
+        try {
+          var saved = localStorage.getItem('murago_theme')
+          var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          document.documentElement.dataset.theme = theme
+          document.documentElement.style.colorScheme = theme
+          var meta = document.getElementById('meta-theme-color')
+          if (meta) meta.setAttribute('content', theme === 'dark' ? '#12100e' : '#f4f4f2')
+        } catch (e) { document.documentElement.dataset.theme = 'light' }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

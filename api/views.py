@@ -1,3 +1,4 @@
+from pathlib import Path
 """Phase 2 REST API — viewsets for all 23 modules + engine-wired actions."""
 from decimal import Decimal
 
@@ -791,6 +792,30 @@ def sync_pull(request):
                      "changes": changes,
                      "conflicts": serializer_for(sync_m.SyncConflict)(
                          sync_m.SyncConflict.objects.filter(resolution="unresolved")[:200], many=True).data})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def backups_list(request):
+    """Module 25 — read-only inventory of server backup artefacts (admin only).
+
+    Additive endpoint for the System > Backups page; backups themselves are
+    produced on the server by `manage.py backup_db`, never via the API.
+    """
+    from .permissions import is_admin
+    if not is_admin(request.user):
+        return Response({"detail": "Admin role required."}, status=403)
+    import datetime
+    from django.conf import settings as dj_settings
+    bdir = Path(dj_settings.BASE_DIR) / "backups"
+    files = []
+    if bdir.is_dir():
+        for p in sorted(bdir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if p.is_file():
+                st = p.stat()
+                files.append({"name": p.name, "size_bytes": st.st_size,
+                              "modified_at": datetime.datetime.fromtimestamp(st.st_mtime, tz=datetime.timezone.utc).isoformat()})
+    return Response({"files": files, "directory": "backups/", "command": "python manage.py backup_db"})
 
 
 # ---------------------------------------------------------------- viewset factory

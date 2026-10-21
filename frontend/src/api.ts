@@ -1,6 +1,5 @@
-/* API client: Token auth (Phase 2 choice). Live deployment always uses real
-   APIs; demo fallback is DEV-only and clearly labelled in the UI. */
-export const DEMO_MODE = import.meta.env.DEV
+/* API client: Token auth (Phase 2 choice). All screens use real APIs only —
+   there is NO demo/mock fallback; unreachable APIs surface as error states. */
 
 export function getToken(): string | null { return localStorage.getItem('murago_token') }
 export function setToken(t: string | null) { t ? localStorage.setItem('murago_token', t) : localStorage.removeItem('murago_token') }

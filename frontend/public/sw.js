@@ -1,5 +1,5 @@
 /* Murago ERP service worker: offline app-shell cache + background sync tag. */
-const CACHE = 'murago-v3'
+const CACHE = 'murago-v4'
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/app/', '/app/manifest.json', '/app/icon.svg'])).then(() => self.skipWaiting()))
 })
