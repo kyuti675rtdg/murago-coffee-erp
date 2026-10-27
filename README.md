@@ -8,7 +8,10 @@ Ethiopian washing stations, dry mills and export operations.
 `/health/`. Demo logins: see `PHASE2-3-VERIFICATION.md` (demo only).
 Phase 1 = database & core domain engines (`VERIFICATION.md`) · Phase 2 = REST
 API + RBAC + sync · Phase 3 = React PWA frontend, all 23 modules
-(`PHASE2-3-VERIFICATION.md`).
+(`PHASE2-3-VERIFICATION.md`) · **HR module (2026-10-27)** = full 14-submodule
+HR system (`hrm` app: 59 models, 60 API routes, 15 frontend pages, Ethiopian
+configurable payroll) — seasonal Worker/30-day payroll unchanged; see
+`HR-MODULE-VERIFICATION.md` and `HR-WORKFLOW-GUIDE.md` in the delivery docs.
 
 ## Run locally
 
