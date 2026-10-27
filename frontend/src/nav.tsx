@@ -5,12 +5,13 @@ import {
   Building2, FileSignature, Package, Container, CreditCard, BookOpen, ReceiptText,
   PiggyBank, BarChart3, Smartphone, Settings, KeyRound, ScrollText, DatabaseBackup,
   Gauge, Factory, Video,
-  Sprout, ShoppingCart, type LucideIcon,
+  Sprout, ShoppingCart, UserPlus, Clock, CalendarCheck, TrendingUp, GraduationCap,
+  ClipboardCheck, Archive, LogOut, HeartHandshake, type LucideIcon,
 } from 'lucide-react'
 
 export type Leaf = {
   id: string; label: string; subtitle: string; labelAm?: string; subtitleAm?: string; icon: LucideIcon
-  file: 'core' | 'quality' | 'ops' | 'admin' | 'farm' | 'site' | 'monitor'; export: string; view?: string
+  file: 'core' | 'quality' | 'ops' | 'admin' | 'farm' | 'site' | 'monitor' | 'hr'; export: string; view?: string
   roles?: string[] // role codes that may READ this page (mirrors API RBAC); undefined = all authenticated
 }
 export type Group = { id: string; label: string; labelAm?: string; icon: LucideIcon; leaves: Leaf[] }
@@ -30,6 +31,9 @@ const INV = ['admin', 'station_supervisor', 'dry_mill_manager', 'site_manager', 
 const LOGI = ['admin', 'export_officer', 'station_supervisor', 'site_manager', 'warehouse_officer', 'dry_mill_manager']
 const RES = ['admin', 'station_supervisor', 'machine_operator', 'industry_professional', 'site_manager', 'weighing_clerk', 'finance_manager', 'finance_officer']
 const HR = ['admin', 'station_supervisor', 'site_manager', 'finance_manager', 'finance_officer']
+const HRADM = ['admin', 'hr_administrator', 'hr_manager', 'recruitment_officer', 'payroll_officer', 'finance_manager', 'finance_officer']
+const HRREAD = [...HRADM, 'station_supervisor', 'site_manager']
+const HREMP = [...HRREAD, 'employee']
 const BUY = ['admin', 'export_officer', 'finance_manager']
 const EXP = ['admin', 'export_officer', 'finance_manager', 'warehouse_officer']
 const BIR = ['admin', 'finance_manager', 'station_supervisor', 'site_manager', 'finance_officer', 'export_officer']
@@ -84,10 +88,27 @@ export const NAV: Group[] = [
     { id: 'resources-water', label: 'Water Register', subtitle: 'የውሃ ፍጆታ መከታተያ ቅጽ — midday meter readings, litres ÷ previous-day kg', labelAm: 'የውሃ መዝገብ', subtitleAm: 'የሰዓት መካከለኛ የሜትር ንባብ፣ ሊትር ÷ ኪሎ', icon: Droplets, file: 'ops', export: 'Resources', view: 'water' , roles: RES },
     { id: 'inventory', label: 'Inventory & Audits', subtitle: 'Consumables, packaging, fuel drums & spare parts — movements and stock audits', labelAm: 'ክምችትና ኦዲት', subtitleAm: 'የፍጆታ እቃዎች፣ ማሸጊያ፣ የነዳጅ በርሜሎች እና መጠባበቂያዎች', icon: PackageSearch, file: 'admin', export: 'Inventory', view: 'all' , roles: INV },
   ]},
+  { id: 'hr', label: 'HR', labelAm: 'ሰው ሀብት', icon: UserCog, leaves: [
+    { id: 'hr-dashboard', label: 'HR Dashboard', subtitle: 'Headcount, leave, vacancies, attendance and payroll cost', labelAm: 'የሰው ሀብት ዳሽቦርድ', subtitleAm: 'የሠራተኞች ቁጥር፣ ፈቃድ፣ ክፍት የሥራ ቦታዎች፣ መገኘት እና የደመወዝ ወጪ', icon: LayoutDashboard, file: 'hr', export: 'HRDashboard', roles: HRREAD },
+    { id: 'hr-recruitment', label: 'Recruitment', subtitle: 'Manpower requests, vacancies, applications, candidates, screenings, interviews, assessments, offers', labelAm: 'ቅጥር', subtitleAm: 'የሰው ኃይል ጥያቄዎች፣ ክፍት ቦታዎች፣ ማመልከቻዎች፣ እጩዎች፣ ምርመራዎች፣ ቃለ መጠይቆች፣ ግምገማዎች፣ ቅናሾች', icon: UserPlus, file: 'hr', export: 'HRRecruitment', roles: HRADM },
+    { id: 'hr-onboarding', label: 'Onboarding', subtitle: 'Onboarding checklists & tasks, employment contracts, document verification', labelAm: 'አቀባበል', subtitleAm: 'የአቀባበል ዝርዝሮችና ተግባራት፣ የቅጥር ውሎች፣ የሰነድ ማረጋገጫ', icon: ClipboardCheck, file: 'hr', export: 'HROnboarding', roles: HRADM },
+    { id: 'hr-employees', label: 'Employees', subtitle: 'Employee directory & profiles — history, documents, status log, transfers & promotions; employees see only their own record', labelAm: 'ሠራተኞች', subtitleAm: 'የሠራተኞች ዝርዝርና መገለጫዎች — ታሪክ፣ ሰነዶች፣ የሁኔታ መዝገብ፣ ዝውውሮችና ማደጎች', icon: Users, file: 'hr', export: 'HREmployees', roles: HREMP },
+    { id: 'hr-org', label: 'Org Structure', subtitle: 'Departments, job positions, job grades, reporting lines', labelAm: 'የድርጅት አወቃቀር', subtitleAm: 'መምሪያዎች፣ የሥራ መደቦች፣ የደረጃዎች፣ የሪፖርት መስመሮች', icon: GitBranch, file: 'hr', export: 'HROrgStructure', roles: HRREAD },
+    { id: 'hr-attendance', label: 'Attendance & Time', subtitle: 'Shifts, shift assignments, time entries (offline check-in), timesheets, overtime', labelAm: 'መገኘትና ሰዓት', subtitleAm: 'ፈረቃዎች፣ የፈረቃ ምደባዎች፣ የሰዓት መዝገቦች (ከመስመር ውጭ መግቢያ)፣ የሰዓት ሉሆች፣ ተጨማሪ ሰዓት', icon: Clock, file: 'hr', export: 'HRAttendanceTime', roles: HRREAD },
+    { id: 'hr-leave', label: 'Leave', subtitle: 'Leave types, balances and requests — approve / reject; employees see only their own', labelAm: 'ፈቃድ', subtitleAm: 'የፈቃድ አይነቶች፣ ቀሪ ቀናት እና ጥያቄዎች — ማጽደቅ / መቃወም', icon: CalendarCheck, file: 'hr', export: 'HRLeave', roles: HREMP },
+    { id: 'hr-payroll', label: 'Payroll', subtitle: 'Salary structures, benefits, payroll rules, runs (calculate → verify → approve → post → pay), lines & payslips; employees see only their own payslips', labelAm: 'ደመወዝ', subtitleAm: 'የደመወዝ አወቃቀሮች፣ ጥቅማ ጥቅሞች፣ የደመወዝ ህጎች፣ ሩኖች፣ መስመሮችና የደመወዝ ወረቀቶች', icon: Wallet, file: 'hr', export: 'HRPayroll', roles: HREMP },
+    { id: 'hr-performance', label: 'Performance', subtitle: 'KPIs and performance reviews', labelAm: 'አፈጻጸም', subtitleAm: 'ዋና የአፈጻጸም አመልካቾች እና የአፈጻጸም ግምገማዎች', icon: TrendingUp, file: 'hr', export: 'HRPerformance', roles: HRREAD },
+    { id: 'hr-training', label: 'Training', subtitle: 'Training courses, plans, enrollments, certifications, competency assessments', labelAm: 'ሥልጠና', subtitleAm: 'የሥልጠና ኮርሶች፣ እቅዶች፣ ምዝገባዎች፣ የምስክር ወረቀቶች፣ የብቃት ግምገማዎች', icon: GraduationCap, file: 'hr', export: 'HRTraining', roles: HRREAD },
+    { id: 'hr-relations', label: 'Employee Relations', subtitle: 'Grievances and disciplinary cases', labelAm: 'የሠራተኞች ግንኙነት', subtitleAm: 'ቅሬታዎች እና የዲሲፕሊን ጉዳዮች', icon: HeartHandshake, file: 'hr', export: 'HRRelations', roles: HRADM },
+    { id: 'hr-assets', label: 'Assets & Clearance', subtitle: 'Company assets, asset returns and clearance checklists', labelAm: 'ንብረቶችና ማጽዳት', subtitleAm: 'የኩባንያ ንብረቶች፣ የንብረት መመለሻዎች እና የማጽዳት ዝርዝሮች', icon: Archive, file: 'hr', export: 'HRAssetsClearance', roles: HRREAD },
+    { id: 'hr-separation', label: 'Separation', subtitle: 'Separation requests (manager → HR → settle → deactivate), handovers, exit interviews, final settlements', labelAm: 'መለያየት', subtitleAm: 'የመለያየት ጥያቄዎች፣ ርክክብ፣ የመውጫ ቃለ መጠይቆች፣ የመጨረሻ ክፍያዎች', icon: LogOut, file: 'hr', export: 'HRSeparation', roles: HRADM },
+    { id: 'hr-reports', label: 'HR Reports', subtitle: 'HR report definitions and approval records', labelAm: 'የሰው ሀብት ሪፖርቶች', subtitleAm: 'የሪፖርት ፍቺዎች እና የማጽደቅ መዝገቦች', icon: BarChart3, file: 'hr', export: 'HRReports', roles: HRREAD },
+    { id: 'hr-settings', label: 'HR Settings', subtitle: 'Tax brackets, pension rules, payroll rules, approval workflows, policies, shift policies', labelAm: 'የሰው ሀብት ቅንብሮች', subtitleAm: 'የግብር ደረጃዎች፣ የጡረታ ህጎች፣ የደመወዝ ህጎች፣ የማጽደቅ ሂደቶች፣ ፖሊሲዎች፣ የፈረቃ ፖሊሲዎች', icon: Settings, file: 'hr', export: 'HRSettings', roles: HRADM },
+  ]},
   { id: 'people', label: 'People', labelAm: 'ሠራተኞች', icon: UserCog, leaves: [
-    { id: 'hr-workers', label: 'Workers', subtitle: 'Seasonal worker registry — casual labour & operator onboarding', labelAm: 'ሠራተኞች', subtitleAm: 'የወቅት ሠራተኞች መዝገብ', icon: Users, file: 'ops', export: 'HR', view: 'workers' , roles: HR },
-    { id: 'hr-attendance', label: '30-Day Attendance Grid', subtitle: 'የቀን ሠራተኞች የሥራ ሰዓት መቆጣጠሪያ ቅጽ — AG Grid, dual-verified (Controlled By / Verified By)', labelAm: 'የ30 ቀን መገኘት ሰንጠረዥ', subtitleAm: 'የቀን ሠራተኞች የሥራ ሰዓት መቆጣጠሪያ — ባለሁለት ማረጋገጫ', icon: CalendarDays, file: 'ops', export: 'HR', view: 'attendance' , roles: HR },
-    { id: 'payroll', label: 'Payroll & Sign-Off', subtitle: 'የቀን ሠራተኞች መክፈያ ፔሮል — generated only from dual-verified attendance; Prepared ≠ Approved', labelAm: 'ደመወዝና ማጽደቅ', subtitleAm: 'ከተረጋገጠ መገኘት ብቻ የሚዘጋጅ ደመወዝ፤ ዝግጅት ≠ ማጽደቅ', icon: Wallet, file: 'ops', export: 'Payroll', roles: FIN },
+    { id: 'hr-workers', label: 'Workers (Seasonal)', subtitle: 'Seasonal worker registry — casual labour & operator onboarding', labelAm: 'ሠራተኞች', subtitleAm: 'የወቅት ሠራተኞች መዝገብ', icon: Users, file: 'ops', export: 'HR', view: 'workers' , roles: HR },
+    { id: 'seasonal-attendance', label: '30-Day Attendance (Seasonal)', subtitle: 'የቀን ሠራተኞች የሥራ ሰዓት መቆጣጠሪያ ቅጽ — AG Grid, dual-verified (Controlled By / Verified By)', labelAm: 'የ30 ቀን መገኘት ሰንጠረዥ', subtitleAm: 'የቀን ሠራተኞች የሥራ ሰዓት መቆጣጠሪያ — ባለሁለት ማረጋገጫ', icon: CalendarDays, file: 'ops', export: 'HR', view: 'attendance' , roles: HR },
+    { id: 'payroll', label: 'Seasonal Payroll & Sign-Off', subtitle: 'የቀን ሠራተኞች መክፈያ ፔሮል — generated only from dual-verified attendance; Prepared ≠ Approved', labelAm: 'ደመወዝና ማጽደቅ', subtitleAm: 'ከተረጋገጠ መገኘት ብቻ የሚዘጋጅ ደመወዝ፤ ዝግጅት ≠ ማጽደቅ', icon: Wallet, file: 'ops', export: 'Payroll', roles: FIN },
   ]},
   { id: 'commerce', label: 'Commerce', labelAm: 'ንግድ', icon: Building2, leaves: [
     { id: 'buyers', label: 'Buyers & Samples', subtitle: 'International buyer CRM and Pre-Shipment Sample (PSS) feedback log', labelAm: 'ገዢዎችና ናሙናዎች', subtitleAm: 'የውጭ ገዢዎች CRM እና የናሙና አስተያየት መዝገብ', icon: Building2, file: 'ops', export: 'Buyers', view: 'buyers' , roles: BUY },

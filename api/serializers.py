@@ -9,6 +9,8 @@ from processing.models import MoistureReading
 from quality.models import CuppingScore, PhysicalAnalysis
 from buyers.models import ContractLotAllocation
 from farmers.models import FarmPlot
+from hrm.models import Certification as HRMCertification
+from hrm.models import Employee, LeaveRequest, TimeEntry
 
 _cache = {}
 
@@ -135,6 +137,76 @@ class FarmPlotSerializer(serializers.ModelSerializer):
         return v
 
 
+class EmployeeSerializer(serializers.ModelSerializer):
+    """HRM employee: hire_date must not be after probation_end."""
+
+    class Meta:
+        model = Employee
+        fields = "__all__"
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        hire = attrs.get("hire_date", getattr(self.instance, "hire_date", None))
+        prob = attrs.get("probation_end", getattr(self.instance, "probation_end", None))
+        if hire and prob and hire > prob:
+            raise serializers.ValidationError("hire_date must be on or before probation_end.")
+        return attrs
+
+
+class LeaveRequestSerializer(serializers.ModelSerializer):
+    """end_date >= start_date; days computed (inclusive); overlap with an
+    already-approved request for the same employee is rejected."""
+
+    class Meta:
+        model = LeaveRequest
+        fields = "__all__"
+        read_only_fields = ["id", "created_at", "updated_at", "days"]
+
+    def validate(self, attrs):
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start and end and end < start:
+            raise serializers.ValidationError("end_date must be on or after start_date.")
+        if start and end:
+            attrs["days"] = str((end - start).days + 1)
+            employee = attrs.get("employee", getattr(self.instance, "employee", None))
+            if employee is not None:
+                clash = LeaveRequest.objects.filter(
+                    employee=employee, status=LeaveRequest.Status.APPROVED,
+                    start_date__lte=end, end_date__gte=start)
+                if self.instance:
+                    clash = clash.exclude(pk=self.instance.pk)
+                if clash.exists():
+                    raise serializers.ValidationError(
+                        "Leave overlaps an already approved leave request for this employee.")
+        return attrs
+
+
+class TimeEntrySerializer(serializers.ModelSerializer):
+    """Hours are computed on save from check_in/check_out (model save)."""
+
+    class Meta:
+        model = TimeEntry
+        fields = "__all__"
+        read_only_fields = ["id", "created_at", "updated_at", "hours_worked"]
+
+    def validate(self, attrs):
+        hours = attrs.get("hours_worked", getattr(self.instance, "hours_worked", None))
+        if hours is not None and Decimal(hours) < 0:
+            raise serializers.ValidationError("hours_worked cannot be negative.")
+        return attrs
+
+
+class HRMCertificationSerializer(serializers.ModelSerializer):
+    """Distinct serializer name so the OpenAPI schema does not collide with
+    farmers.Certification's generated CertificationSerializer."""
+
+    class Meta:
+        model = HRMCertification
+        fields = "__all__"
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
 CUSTOM_SERIALIZERS = {
     CherryIntake: CherryIntakeSerializer,
     MoistureReading: MoistureReadingSerializer,
@@ -142,6 +214,10 @@ CUSTOM_SERIALIZERS = {
     CuppingScore: CuppingScoreSerializer,
     ContractLotAllocation: ContractLotAllocationSerializer,
     FarmPlot: FarmPlotSerializer,
+    Employee: EmployeeSerializer,
+    LeaveRequest: LeaveRequestSerializer,
+    TimeEntry: TimeEntrySerializer,
+    HRMCertification: HRMCertificationSerializer,
 }
 
 

@@ -43,6 +43,7 @@ from inventory import models as inventory_m
 from bi import models as bi_m
 from sync import models as sync_m
 from sysconf import models as sysconf_m
+from hrm import models as hrm_m
 
 REGISTRY = [
     ("organizations", core_m.Organization), ("stations", core_m.Station),
@@ -97,6 +98,42 @@ REGISTRY = [
     ("grade-definitions", sysconf_m.GradeDefinition), ("measurement-units", sysconf_m.MeasurementUnit),
     ("fermentation-tanks", sysconf_m.FermentationTank), ("yield-benchmarks", sysconf_m.YieldBenchmark),
     ("threshold-configs", sysconf_m.ThresholdConfig),
+    ("hr-departments", hrm_m.Department), ("hr-job-positions", hrm_m.JobPosition),
+    ("hr-job-grades", hrm_m.JobGrade), ("hr-reporting-lines", hrm_m.ReportingLine),
+    ("hr-employees", hrm_m.Employee), ("hr-employee-documents", hrm_m.EmployeeDocument),
+    ("hr-employment-histories", hrm_m.EmploymentHistory),
+    ("hr-employee-status-logs", hrm_m.EmployeeStatusLog),
+    ("hr-manpower-requests", hrm_m.ManpowerRequest), ("hr-job-vacancies", hrm_m.JobVacancy),
+    ("hr-applications", hrm_m.Application), ("hr-candidates", hrm_m.Candidate),
+    ("hr-screenings", hrm_m.Screening), ("hr-interviews", hrm_m.Interview),
+    ("hr-assessments", hrm_m.Assessment), ("hr-selection-decisions", hrm_m.SelectionDecision),
+    ("hr-offer-letters", hrm_m.OfferLetter),
+    ("hr-onboarding-checklists", hrm_m.OnboardingChecklist),
+    ("hr-onboarding-tasks", hrm_m.OnboardingTask),
+    ("hr-employment-contracts", hrm_m.EmploymentContract),
+    ("hr-document-verifications", hrm_m.DocumentVerification),
+    ("hr-shifts", hrm_m.Shift), ("hr-shift-assignments", hrm_m.ShiftAssignment),
+    ("hr-time-entries", hrm_m.TimeEntry), ("hr-timesheets", hrm_m.Timesheet),
+    ("hr-overtime-records", hrm_m.OvertimeRecord), ("hr-leave-types", hrm_m.LeaveType),
+    ("hr-leave-balances", hrm_m.LeaveBalance), ("hr-leave-requests", hrm_m.LeaveRequest),
+    ("hr-salary-structures", hrm_m.SalaryStructure), ("hr-benefits", hrm_m.Benefit),
+    ("hr-payroll-rules", hrm_m.PayrollRule), ("hr-tax-brackets", hrm_m.TaxBracket),
+    ("hr-pension-rules", hrm_m.PensionRule), ("hr-payroll-runs", hrm_m.HRPayrollRun),
+    ("hr-payroll-lines", hrm_m.HRPayrollLine), ("hr-payslips", hrm_m.Payslip),
+    ("hr-kpis", hrm_m.KPI), ("hr-performance-reviews", hrm_m.PerformanceReview),
+    ("hr-training-courses", hrm_m.TrainingCourse), ("hr-training-plans", hrm_m.TrainingPlan),
+    ("hr-training-enrollments", hrm_m.TrainingEnrollment),
+    ("hr-certifications", hrm_m.Certification),
+    ("hr-competency-assessments", hrm_m.CompetencyAssessment),
+    ("hr-grievances", hrm_m.Grievance), ("hr-disciplinary-cases", hrm_m.DisciplinaryCase),
+    ("hr-company-assets", hrm_m.CompanyAsset), ("hr-asset-returns", hrm_m.AssetReturn),
+    ("hr-clearance-checklists", hrm_m.ClearanceChecklist),
+    ("hr-separation-requests", hrm_m.SeparationRequest), ("hr-handovers", hrm_m.Handover),
+    ("hr-exit-interviews", hrm_m.ExitInterview), ("hr-final-settlements", hrm_m.FinalSettlement),
+    ("hr-policies", hrm_m.HRPolicy), ("hr-approval-workflows", hrm_m.ApprovalWorkflowConfig),
+    ("hr-shift-policies", hrm_m.ShiftPolicy), ("hr-salary-rules", hrm_m.SalaryRule),
+    ("hr-report-definitions", hrm_m.HRReportDefinition),
+    ("hr-approval-records", hrm_m.ApprovalRecord),
 ]
 MODEL_BY_LABEL = {m._meta.label_lower: m for _, m in REGISTRY}
 
@@ -104,7 +141,14 @@ STATION_PATHS = ["station", "mill_station", "store__station", "center__station",
                  "sheet__station", "lot__station", "period__station", "from_station",
                  "farmer__station", "container__station", "waybill__lot__station",
                  "voucher__station", "work_order__mill_station", "grading__lot__station",
-                 "marking__lot__station", "parent_lot__station"]
+                 "marking__lot__station", "parent_lot__station",
+                 "employee__station", "department__station", "employee__department__station",
+                 "run__station", "payroll_run__station", "separation__employee__station",
+                 "vacancy__station", "application__vacancy__station",
+                 "checklist__station", "checklist__employee__station",
+                 "checklist__application__vacancy__station",
+                 "line__run__station", "asset__station", "shift__station",
+                 "position__department__station", "plan__station"]
 
 
 def _station_filter(qs, model, station_ids):
@@ -544,6 +588,344 @@ class CuppingScoreViewSet(StationScopedViewSet):
             lot=cupping.lot, cupping=cupping, grade=grade, decision=decision,
             decided_by=request.user, remarks=request.data.get("remarks", ""))
         return Response(serializer_for(quality_m.QualityApproval)(approval).data, status=201)
+
+
+# ---------------------------------------------------------------- HRM (hrm app)
+from hrm import engine as hrm_engine
+from hrm.approvals import ApprovalError, record_approval, require_not_creator
+
+
+class EmployeeViewSet(StationScopedViewSet):
+    """Self-service: a user whose ONLY role is `employee` and who is linked
+    via Employee.user sees only their own record. Hard delete is blocked
+    (409); use the archive action instead."""
+    model = hrm_m.Employee
+
+    def get_queryset(self):
+        if user_role_codes(self.request.user) == {"employee"}:
+            return self.model.objects.filter(user=self.request.user)
+        return super().get_queryset()
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        national_id = (data.get("national_id") or "").strip()
+        if national_id:
+            matches = self.model.objects.filter(national_id=national_id)
+            if matches.exists():
+                return Response(
+                    {"detail": "An employee with this national_id already exists.",
+                     "matches": [{"id": str(m.id), "employee_id": m.employee_id,
+                                  "full_name": m.full_name} for m in matches]},
+                    status=status.HTTP_409_CONFLICT)
+        full_name = (data.get("full_name") or "").strip()
+        dob = data.get("dob")
+        phone = (data.get("phone") or "").strip()
+        if full_name and dob and phone:
+            matches = self.model.objects.filter(full_name__iexact=full_name, dob=dob, phone=phone)
+            if matches.exists():
+                return Response(
+                    {"detail": "A possible duplicate employee (same name, date of birth and phone) already exists.",
+                     "matches": [{"id": str(m.id), "employee_id": m.employee_id,
+                                  "full_name": m.full_name} for m in matches]},
+                    status=status.HTTP_409_CONFLICT)
+        return super().create(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({"detail": "Employees cannot be hard-deleted; archive the record instead."},
+                        status=status.HTTP_409_CONFLICT)
+
+    @action(detail=False, methods=["get"], url_path="me")
+    def me(self, request):
+        obj = self.model.objects.filter(user=request.user).first()
+        if obj is None:
+            return _err("No employee record is linked to this account.", status.HTTP_404_NOT_FOUND)
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        obj = self.get_object()
+        previous = obj.status
+        obj.status = hrm_m.Employee.Status.ARCHIVED
+        obj.is_active = False
+        obj.archived_at = timezone.now()
+        obj.save(update_fields=["status", "is_active", "archived_at", "updated_at"])
+        if previous != hrm_m.Employee.Status.ARCHIVED:
+            hrm_m.EmployeeStatusLog.objects.create(
+                employee=obj, station=obj.station, from_status=previous,
+                to_status=hrm_m.Employee.Status.ARCHIVED, actor=request.user,
+                reason=request.data.get("reason", "Archived via API"))
+        return Response(serializer_for(self.model)(obj).data)
+
+
+class ManpowerRequestViewSet(StationScopedViewSet):
+    model = hrm_m.ManpowerRequest
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            require_not_creator(obj, request.user, "requester")
+        except ApprovalError as exc:
+            return _err(str(exc), status.HTTP_403_FORBIDDEN)
+        if obj.status not in (obj.Status.DRAFT, obj.Status.SUBMITTED):
+            return _err(f"A {obj.status} manpower request cannot be approved.")
+        obj.status = obj.Status.APPROVED
+        obj.approver = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "approver", "decided_at", "updated_at"])
+        record_approval("manpower", obj, actor=request.user, decision="approved",
+                        comment=request.data.get("comment", ""))
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        obj = self.get_object()
+        if obj.status not in (obj.Status.DRAFT, obj.Status.SUBMITTED):
+            return _err(f"A {obj.status} manpower request cannot be rejected.")
+        obj.status = obj.Status.REJECTED
+        obj.approver = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "approver", "decided_at", "updated_at"])
+        record_approval("manpower", obj, actor=request.user, decision="rejected",
+                        comment=request.data.get("comment", ""))
+        return Response(serializer_for(self.model)(obj).data)
+
+
+class LeaveRequestViewSet(StationScopedViewSet):
+    model = hrm_m.LeaveRequest
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.approve_leave(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        obj = self.get_object()
+        if obj.status != obj.Status.PENDING:
+            return _err(f"Only a pending leave request can be rejected (current: {obj.status}).")
+        obj.status = obj.Status.REJECTED
+        obj.approver = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "approver", "decided_at", "updated_at"])
+        record_approval("leave", obj, actor=request.user, decision="rejected",
+                        comment=request.data.get("comment", ""))
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.cancel_leave(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+
+class HRPayrollRunViewSet(StationScopedViewSet):
+    model = hrm_m.HRPayrollRun
+
+    @action(detail=True, methods=["post"])
+    def calculate(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.generate_hr_payroll_run(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.verify_hr_payroll_run(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.approve_hr_payroll_run(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"], url_path="post-journal")
+    def post_journal(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.post_hr_payroll_journal(obj)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            hrm_engine.mark_hr_payroll_paid(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+
+class SeparationRequestViewSet(StationScopedViewSet):
+    model = hrm_m.SeparationRequest
+
+    @action(detail=True, methods=["post"], url_path="manager-approve")
+    def manager_approve(self, request, pk=None):
+        obj = self.get_object()
+        if obj.requested_by_id and obj.requested_by_id == request.user.pk:
+            return _err("Self-approval is not allowed: the requester cannot manager-approve.",
+                        status.HTTP_403_FORBIDDEN)
+        if obj.status != obj.Status.PENDING:
+            return _err(f"A {obj.status} separation request cannot be manager-approved.")
+        obj.status = obj.Status.MANAGER_APPROVED
+        obj.manager_approver = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "manager_approver", "decided_at", "updated_at"])
+        record_approval("separation", obj, actor=request.user, decision="approved",
+                        step_order=1, comment=request.data.get("comment", ""))
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"], url_path="hr-approve")
+    def hr_approve(self, request, pk=None):
+        obj = self.get_object()
+        if (obj.requested_by_id and obj.requested_by_id == request.user.pk) or \
+                (obj.manager_approver_id and obj.manager_approver_id == request.user.pk):
+            return _err("Self-approval is not allowed: HR approval must come from a different user.",
+                        status.HTTP_403_FORBIDDEN)
+        if obj.status != obj.Status.MANAGER_APPROVED:
+            return _err(f"A {obj.status} separation request cannot be HR-approved.")
+        obj.status = obj.Status.HR_APPROVED
+        obj.hr_approver = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "hr_approver", "decided_at", "updated_at"])
+        record_approval("separation", obj, actor=request.user, decision="approved",
+                        step_order=2, comment=request.data.get("comment", ""))
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def settle(self, request, pk=None):
+        obj = self.get_object()
+        if obj.status not in (obj.Status.HR_APPROVED, obj.Status.CLEARED):
+            return _err(f"A {obj.status} separation request cannot be settled.")
+        obj.status = obj.Status.SETTLED
+        obj.save(update_fields=["status", "updated_at"])
+        return Response(serializer_for(self.model)(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def deactivate(self, request, pk=None):
+        obj = self.get_object()
+        if obj.status not in (obj.Status.HR_APPROVED, obj.Status.CLEARED, obj.Status.SETTLED):
+            return _err(f"A {obj.status} separation request cannot be finalised/deactivated.")
+        try:
+            hrm_engine.finalize_separation(obj, request.user)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        return Response(serializer_for(self.model)(obj).data)
+
+
+class OfferLetterViewSet(StationScopedViewSet):
+    model = hrm_m.OfferLetter
+
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        obj = self.get_object()
+        if obj.status != obj.Status.SENT:
+            return _err(f"Only a sent offer letter can be accepted (current: {obj.status}).")
+        obj.status = obj.Status.ACCEPTED
+        obj.accepted_at = timezone.now()
+        obj.save(update_fields=["status", "accepted_at", "updated_at"])
+        return Response(serializer_for(self.model)(obj).data)
+
+
+class OnboardingChecklistViewSet(StationScopedViewSet):
+    model = hrm_m.OnboardingChecklist
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            result = hrm_engine.complete_onboarding(
+                obj, request.user,
+                create_account=bool(request.data.get("create_account")),
+                username=request.data.get("username") or None)
+        except hrm_engine.HRMError as exc:
+            return _err(str(exc))
+        obj.refresh_from_db()
+        data = serializer_for(self.model)(obj).data
+        data["employee_id"] = str(result["employee"].id)
+        data["contract_id"] = str(result["contract"].id)
+        data["user_id"] = result["user"].pk if result["user"] is not None else None
+        return Response(data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def hr_dashboard(request):
+    """HR dashboard aggregates. HR roles + admin + finance + station
+    supervisor / site manager only (the `employee` role is excluded)."""
+    allowed = {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+               "finance_manager", "finance_officer", "station_supervisor", "site_manager"}
+    if not is_admin(request.user) and not (user_role_codes(request.user) & allowed):
+        return _err("Your role does not permit the HR dashboard.", status.HTTP_403_FORBIDDEN)
+    ids = user_station_ids(request.user)
+    employees = _station_filter(hrm_m.Employee.objects.all(), hrm_m.Employee, ids)
+    vacancies = _station_filter(hrm_m.JobVacancy.objects.all(), hrm_m.JobVacancy, ids)
+    applications = _station_filter(hrm_m.Application.objects.all(), hrm_m.Application, ids)
+    time_entries = _station_filter(hrm_m.TimeEntry.objects.all(), hrm_m.TimeEntry, ids)
+    leave_requests = _station_filter(hrm_m.LeaveRequest.objects.all(), hrm_m.LeaveRequest, ids)
+    runs = _station_filter(hrm_m.HRPayrollRun.objects.all(), hrm_m.HRPayrollRun, ids)
+    headcount = employees.count()
+    year_ago = timezone.now() - timedelta(days=365)
+    separated = hrm_m.SeparationRequest.objects.filter(
+        status__in=[hrm_m.SeparationRequest.Status.SETTLED, hrm_m.SeparationRequest.Status.ARCHIVED],
+        created_at__gte=year_ago).count()
+    if ids is not None:
+        separated = _station_filter(
+            hrm_m.SeparationRequest.objects.filter(
+                status__in=[hrm_m.SeparationRequest.Status.SETTLED,
+                            hrm_m.SeparationRequest.Status.ARCHIVED],
+                created_at__gte=year_ago),
+            hrm_m.SeparationRequest, ids).count()
+    avg_headcount = max(headcount, 1)
+    turnover = round(separated / avg_headcount, 4)
+    last_run = runs.order_by("-created_at").first()
+    by_department = [{"department": (row["department__name"] or "Unassigned"), "count": row["count"]}
+                     for row in employees.values("department__name")
+                     .annotate(count=dj_models.Count("id")).order_by("-count")]
+    by_station = [{"station": (row["station__code"] or "Unassigned"), "count": row["count"]}
+                  for row in employees.values("station__code")
+                  .annotate(count=dj_models.Count("id")).order_by("-count")]
+    return Response({
+        "headcount": headcount,
+        "active_employees": employees.filter(status=hrm_m.Employee.Status.ACTIVE).count(),
+        "on_leave": employees.filter(status=hrm_m.Employee.Status.ON_LEAVE).count(),
+        "vacancies_open": vacancies.filter(status=hrm_m.JobVacancy.Status.OPEN).count(),
+        "applications_pending": applications.filter(status=hrm_m.Application.Status.PENDING).count(),
+        "attendance_today": time_entries.filter(entry_date=timezone.localdate()).count(),
+        "payroll_cost_last_run": str(last_run.total_gross) if last_run is not None else "0",
+        "turnover_last_12m": turnover,
+        "separated_last_12m": separated,
+        "leave_pending": leave_requests.filter(status=hrm_m.LeaveRequest.Status.PENDING).count(),
+        "by_department": by_department,
+        "by_station": by_station,
+    })
 
 
 # ---------------------------------------------------------------- Phase 4 viewsets
@@ -1227,6 +1609,11 @@ CUSTOM_VIEWSETS = {
     "stock-audits": StockAuditViewSet, "containers": ContainerViewSet,
     "farmers": FarmerViewSet, "bonus-calculations": BonusCalculationViewSet,
     "cherry-intakes": CherryIntakeViewSet,
+    "hr-employees": EmployeeViewSet, "hr-manpower-requests": ManpowerRequestViewSet,
+    "hr-leave-requests": LeaveRequestViewSet, "hr-payroll-runs": HRPayrollRunViewSet,
+    "hr-separation-requests": SeparationRequestViewSet,
+    "hr-offer-letters": OfferLetterViewSet,
+    "hr-onboarding-checklists": OnboardingChecklistViewSet,
 }
 
 

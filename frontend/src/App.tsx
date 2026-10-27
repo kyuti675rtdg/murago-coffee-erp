@@ -22,6 +22,7 @@ const LOADERS: Record<Leaf['file'], () => Promise<any>> = {
   farm: () => import('./pages-farm'),
   site: () => import('./pages-site'),
   monitor: () => import('./pages-monitor'),
+  hr: () => import('./pages-hr'),
 }
 const pageCache = new Map<string, React.LazyExoticComponent<any>>()
 function pageComponent(leaf: Leaf): React.LazyExoticComponent<any> {

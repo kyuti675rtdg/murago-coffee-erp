@@ -30,7 +30,8 @@ class RolePermissionMatrixTests(TestCase):
         r = self.as_user(self.admin).get("/api/admin/permission-matrix/")
         self.assertEqual(r.status_code, 200, r.content)
         body = r.json()
-        self.assertEqual(len(body["apps"]), 21)
+        self.assertEqual(len(body["apps"]), 22)  # 21 original modules + hrm
+        self.assertIn("hrm", [a["app"] for a in body["apps"]])
         clerk = [x for x in body["roles"] if x["code"] == "weighing_clerk"][0]
         self.assertIn("read", clerk["grants"]["farmers"])
         self.assertNotIn("payroll", clerk["grants"])

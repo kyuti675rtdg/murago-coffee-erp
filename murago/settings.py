@@ -61,7 +61,7 @@ INSTALLED_APPS = [
     "core", "farmers", "collection", "procurement", "processing", "drymill",
     "traceability", "quality", "warehouse", "resources", "hr", "payroll",
     "buyers", "exports", "logistics", "finance", "payments", "inventory",
-    "bi", "sync", "sysconf",
+    "bi", "sync", "sysconf", "hrm",
 ]
 if GIS_AVAILABLE:
     INSTALLED_APPS.insert(6, "django.contrib.gis")

@@ -16,6 +16,7 @@ urlpatterns = [
     path("admin/permission-matrix/", auth_views.permission_matrix),
     path("admin/permission-matrix/<str:role_code>/", auth_views.permission_matrix_update),
     path("dashboard/", views.dashboard),
+    path("hr-dashboard/", views.hr_dashboard),
     path("site-performance/", views.site_performance),
     path("site-performance/<uuid:station_id>/", views.site_performance_detail),
     path("postgis/", views.postgis_status),

@@ -32,6 +32,7 @@ ALL_ROLES = {
     "q_grader", "dry_mill_manager", "export_officer", "finance_manager",
     "purchaser", "site_manager", "procurement_officer", "weighing_clerk",
     "quality_controller", "warehouse_officer", "field_officer", "finance_officer",
+    "hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer", "employee",
 }
 
 # app_label -> roles allowed to READ (admin always allowed, handled separately)
@@ -73,6 +74,8 @@ READ_MATRIX = {
            "finance_officer", "export_officer"},
     "sync": {"station_supervisor", "site_manager"},
     "sysconf": ALL_ROLES,  # reference data (grades/units/tanks/benchmarks); thresholds admin-only via override
+    "hrm": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+            "finance_manager", "finance_officer", "station_supervisor", "site_manager", "employee"},
 }
 
 # app_label -> roles allowed to WRITE
@@ -105,6 +108,8 @@ WRITE_MATRIX = {
     "sync": {"station_supervisor", "machine_operator", "site_manager",
              "weighing_clerk", "field_officer"},
     "sysconf": set(),  # admin only
+    "hrm": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+            "finance_manager"},
     "core": {"site_manager"},  # station profile/equipment/cameras; identity models admin-only below
 }
 
@@ -139,6 +144,25 @@ MODEL_OVERRIDES = {
     # Sync conflict resolution is a supervisor/admin task
     ("sync", "syncconflict"): {
         "read": {"station_supervisor", "site_manager"}, "write": set()},
+    # HRM payroll/salary records are NOT readable by the `employee` role:
+    # an employee sees only their own record via /hr-employees/me/ and
+    # their own payslip is delivered outside this API surface. Payroll
+    # runs/lines and salary structures stay HR + finance + site management.
+    ("hrm", "hrpayrollrun"): {
+        "read": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+                 "finance_manager", "finance_officer", "station_supervisor", "site_manager"}},
+    ("hrm", "hrpayrollline"): {
+        "read": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+                 "finance_manager", "finance_officer", "station_supervisor", "site_manager"}},
+    ("hrm", "payslip"): {
+        "read": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+                 "finance_manager", "finance_officer", "station_supervisor", "site_manager"}},
+    ("hrm", "salarystructure"): {
+        "read": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+                 "finance_manager", "finance_officer", "station_supervisor", "site_manager"}},
+    ("hrm", "benefit"): {
+        "read": {"hr_administrator", "recruitment_officer", "hr_manager", "payroll_officer",
+                 "finance_manager", "finance_officer", "station_supervisor", "site_manager"}},
 }
 
 

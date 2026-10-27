@@ -37,6 +37,16 @@ def login(request):
         return Response({"detail": "Invalid username or password."}, status=status.HTTP_401_UNAUTHORIZED)
     if not user.is_active:
         return Response({"detail": "Account is disabled."}, status=status.HTTP_403_FORBIDDEN)
+    # Block login for deactivated (archived/separated) employee accounts.
+    try:
+        from hrm.models import Employee as _HRMEmployee
+        _emp = _HRMEmployee.objects.filter(user=user).first()
+        if (_emp is not None and _emp.account_deactivated
+                and _emp.status in (_HRMEmployee.Status.ARCHIVED, _HRMEmployee.Status.SEPARATED)):
+            return Response({"detail": "Employee account is deactivated."},
+                            status=status.HTTP_403_FORBIDDEN)
+    except Exception:
+        pass
     token, _ = Token.objects.get_or_create(user=user)
     return Response({"token": token.key, "user": _profile(user)})
 
@@ -132,7 +142,7 @@ MATRIX_APPS = [
     ("processing", "Processing"), ("drymill", "Dry Mill"),
     ("traceability", "Traceability"), ("quality", "Quality"),
     ("warehouse", "Warehouse & Stores"), ("resources", "Resources (Fuel & Water)"),
-    ("hr", "HR & Workers"), ("payroll", "Payroll"), ("buyers", "Buyers & Contracts"),
+    ("hr", "HR & Workers"), ("payroll", "Payroll"), ("hrm", "HR & Employees"), ("buyers", "Buyers & Contracts"),
     ("exports", "Exports"), ("logistics", "Logistics"), ("finance", "Finance & GL"),
     ("payments", "Payments"), ("inventory", "Inventory"), ("bi", "BI Reports"),
     ("sync", "Sync"), ("sysconf", "System Reference Data"),

@@ -89,6 +89,11 @@ class Role(TimeStampedUUIDModel):
         WAREHOUSE_OFFICER = "warehouse_officer", "Warehouse Officer"
         FIELD_OFFICER = "field_officer", "Field Officer"
         FINANCE_OFFICER = "finance_officer", "Finance Officer"
+        HR_ADMINISTRATOR = "hr_administrator", "HR Administrator"
+        RECRUITMENT_OFFICER = "recruitment_officer", "Recruitment Officer"
+        HR_MANAGER = "hr_manager", "HR Manager"
+        PAYROLL_OFFICER = "payroll_officer", "Payroll Officer"
+        EMPLOYEE = "employee", "Employee"
 
     code = models.CharField(max_length=32, choices=RoleCode.choices, unique=True)
     description = models.TextField(blank=True)
