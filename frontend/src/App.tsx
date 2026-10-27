@@ -149,13 +149,17 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     let stored: Record<string, boolean> = {}
     try { stored = JSON.parse(localStorage.getItem('murago_nav_groups') || '{}') } catch { stored = {} }
-    // One-time migration (murago-v9 / HR nav fix): a stored collapsed HR group
-    // is stale from before the HR build — open HR once, then respect toggles.
+    // One-time migration (nav restructure, murago-v10): the Human Resources
+    // group was formerly stored under key 'hr'. Carry any stored preference
+    // for it to the new 'human-resources' key, and open it on first load
+    // after the restructure (as the HR nav fix did); then respect toggles.
     try {
-      if (localStorage.getItem('murago_nav_hr_migrated') !== '1') {
-        stored = { ...stored, hr: true }
+      if (localStorage.getItem('murago_nav_hr_restructure_migrated') !== '1') {
+        const prevHr = stored['hr']
+        delete stored['hr']
+        stored = { ...stored, 'human-resources': prevHr ?? true }
         localStorage.setItem('murago_nav_groups', JSON.stringify(stored))
-        localStorage.setItem('murago_nav_hr_migrated', '1')
+        localStorage.setItem('murago_nav_hr_restructure_migrated', '1')
       }
     } catch { /* ignore */ }
     return stored
@@ -168,7 +172,7 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
     })
   }
   // HR leaves are always listed (canList); other groups keep role filtering.
-  const visible = NAV.map((g) => ({ ...g, leaves: g.leaves.filter((l) => canList(l, roles, g.id)) })).filter((g) => g.leaves.length)
+  const visible = NAV.map((g) => ({ ...g, leaves: g.leaves.filter((l) => canList(l, roles)) })).filter((g) => g.leaves.length)
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}>
       <div className="flex items-center gap-2.5 px-3.5 py-4" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
@@ -197,7 +201,7 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
               style={{ color: groupActive ? 'var(--accent-strong)' : 'var(--sidebar-muted)' }}
               onClick={() => toggleGroup(g.id)} aria-expanded={isOpen}>
               <GIcon size={15} /><span className="flex-1 text-left">{gl(g)}</span>
-              {g.id === 'hr' && <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: 'var(--btn-bg)', color: 'var(--btn-text)' }}>{g.leaves.length}</span>}
+              {g.id === 'human-resources' && <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: 'var(--btn-bg)', color: 'var(--btn-text)' }}>{g.leaves.length}</span>}
               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
             {isOpen && g.leaves.map((l) => { const Icon = l.icon; const locked = !canSee(l, roles); return (
@@ -211,7 +215,7 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
         })}
       </nav>
       {!collapsed && <div className="px-3.5 py-3 text-[11px]" style={{ borderTop: '1px solid var(--sidebar-border)', color: 'var(--sidebar-muted)' }}>
-        {lang === 'am' ? '25+ ሞዱሎች · የሚና ፈቃድ በAPI ይተገበራል' : '25 modules · role-based access enforced by the API'}
+        {lang === 'am' ? 'የንግድ ሞዱሎች · የሚና ፈቃድ በAPI ይተገበራል' : 'Business modules · role-based access enforced by the API'}
       </div>}
     </div>
   )
@@ -236,7 +240,7 @@ function Topbar({ page, go, roles }: any) {
   const results = useMemo(() => {
     if (!q.trim()) return []
     const needle = q.trim().toLowerCase()
-    return NAV.flatMap((g) => g.leaves.filter((l) => canList(l, roles, g.id)).map((l) => ({ leaf: l, group: g })))
+    return NAV.flatMap((g) => g.leaves.filter((l) => canList(l, roles)).map((l) => ({ leaf: l, group: g })))
       .filter(({ leaf, group }) => leaf.label.toLowerCase().includes(needle) || (leaf.labelAm ?? '').includes(q.trim()) || group.label.toLowerCase().includes(needle))
       .slice(0, 8)
   }, [q, roles])
