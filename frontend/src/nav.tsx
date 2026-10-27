@@ -142,3 +142,14 @@ export function canSee(leaf: Leaf, roleCodes: string[]): boolean {
   if (roleCodes.includes('admin')) return true
   return leaf.roles.some((r) => roleCodes.includes(r))
 }
+
+// HR leaves are always LISTED for every authenticated user (visibility only).
+// Access itself is still enforced by canSee() (Access Denied view) and by
+// server-side RBAC on every HR API endpoint. Never use canList() for access.
+export function isHrLeaf(leaf: Leaf): boolean {
+  return leaf.id.startsWith('hr-')
+}
+export function canList(leaf: Leaf, roleCodes: string[], groupId?: string): boolean {
+  if (groupId === 'hr' || isHrLeaf(leaf)) return true
+  return canSee(leaf, roleCodes)
+}

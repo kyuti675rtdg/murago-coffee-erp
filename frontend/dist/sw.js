@@ -6,7 +6,7 @@
    - API GET: network-first; cache ONLY successful (2xx) responses for
      offline viewing; error responses are NEVER cached.
    Bump CACHE on any breaking change to purge old caches on activate. */
-const CACHE = 'murago-v8'
+const CACHE = 'murago-v9'
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/app/', '/app/manifest.json', '/app/icon.svg'])).then(() => self.skipWaiting()))
 })

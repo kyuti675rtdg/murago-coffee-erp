@@ -1,13 +1,13 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Bell, ChevronDown, ChevronRight, Coffee, Eye, EyeOff, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen,
+  Bell, ChevronDown, ChevronRight, Coffee, Eye, EyeOff, Lock, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen,
   Search, Sun, Wifi, WifiOff, X,
 } from 'lucide-react'
 import muragoSign from './assets/murago-sign.jpg'
 import muragoLogo from './assets/murago-logo.png'
 import { api, post } from './api'
-import { NAV, LEAF_BY_ID, canSee, type Leaf } from './nav'
+import { NAV, LEAF_BY_ID, canSee, canList, type Leaf } from './nav'
 import { ToastCtx, PageHeader, errMsg, toastEl, useList } from './ui'
 import { useAuth, useStationCtx } from './store'
 import { useTheme } from './theme'
@@ -147,7 +147,18 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
   const gl = (g: any) => (lang === 'am' ? (g.labelAm ?? g.label) : g.label)
   const ll = (l: any) => (lang === 'am' ? (l.labelAm ?? l.label) : l.label)
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('murago_nav_groups') || '{}') } catch { return {} }
+    let stored: Record<string, boolean> = {}
+    try { stored = JSON.parse(localStorage.getItem('murago_nav_groups') || '{}') } catch { stored = {} }
+    // One-time migration (murago-v9 / HR nav fix): a stored collapsed HR group
+    // is stale from before the HR build — open HR once, then respect toggles.
+    try {
+      if (localStorage.getItem('murago_nav_hr_migrated') !== '1') {
+        stored = { ...stored, hr: true }
+        localStorage.setItem('murago_nav_groups', JSON.stringify(stored))
+        localStorage.setItem('murago_nav_hr_migrated', '1')
+      }
+    } catch { /* ignore */ }
+    return stored
   })
   const toggleGroup = (id: string) => {
     setExpanded((prev: Record<string, boolean>) => {
@@ -156,7 +167,8 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
       return next
     })
   }
-  const visible = NAV.map((g) => ({ ...g, leaves: g.leaves.filter((l) => canSee(l, roles)) })).filter((g) => g.leaves.length)
+  // HR leaves are always listed (canList); other groups keep role filtering.
+  const visible = NAV.map((g) => ({ ...g, leaves: g.leaves.filter((l) => canList(l, roles, g.id)) })).filter((g) => g.leaves.length)
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}>
       <div className="flex items-center gap-2.5 px-3.5 py-4" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
@@ -171,11 +183,13 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
           const groupActive = g.leaves.some((l) => l.id === page)
           if (collapsed) {
             return (<div key={g.id} className="mb-1">
-              {g.leaves.map((l) => { const Icon = l.icon; return (
-                <button key={l.id} title={`${gl(g)} — ${ll(l)}`} aria-label={ll(l)} onClick={() => { go(l.id); closeMobile() }}
-                  className="w-full flex items-center justify-center min-h-[44px] rounded-lg mb-0.5"
-                  style={page === l.id ? { background: 'var(--btn-bg)', color: 'var(--btn-text)' } : { color: 'var(--sidebar-text)' }}>
-                  <Icon size={18} /></button>) })}
+              {g.leaves.map((l) => { const Icon = l.icon; const locked = !canSee(l, roles); return (
+                <button key={l.id} title={`${gl(g)} — ${ll(l)}${locked ? ' (restricted — requires an HR role)' : ''}`} aria-label={ll(l)} onClick={() => { go(l.id); closeMobile() }}
+                  className="relative w-full flex items-center justify-center min-h-[44px] rounded-lg mb-0.5"
+                  style={page === l.id ? { background: 'var(--btn-bg)', color: 'var(--btn-text)' } : locked ? { color: 'var(--sidebar-muted)', opacity: 0.75 } : { color: 'var(--sidebar-text)' }}>
+                  <Icon size={18} />
+                  {locked && <Lock size={10} className="absolute bottom-1 right-2" aria-hidden />}
+                </button>) })}
             </div>)
           }
           return (<div key={g.id} className="mb-1.5">
@@ -183,13 +197,15 @@ function Sidebar({ page, go, roles, collapsed, mobileOpen, closeMobile }: any) {
               style={{ color: groupActive ? 'var(--accent-strong)' : 'var(--sidebar-muted)' }}
               onClick={() => toggleGroup(g.id)} aria-expanded={isOpen}>
               <GIcon size={15} /><span className="flex-1 text-left">{gl(g)}</span>
+              {g.id === 'hr' && <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: 'var(--btn-bg)', color: 'var(--btn-text)' }}>{g.leaves.length}</span>}
               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
-            {isOpen && g.leaves.map((l) => { const Icon = l.icon; return (
+            {isOpen && g.leaves.map((l) => { const Icon = l.icon; const locked = !canSee(l, roles); return (
               <button key={l.id} onClick={() => { go(l.id); closeMobile() }}
                 className="w-full flex items-center gap-2.5 pl-4 pr-2.5 min-h-[40px] rounded-lg text-sm text-left"
-                style={page === l.id ? { background: 'var(--btn-bg)', color: 'var(--btn-text)', fontWeight: 600 } : { color: 'var(--sidebar-text)' }}>
-                <Icon size={16} className="shrink-0" /><span className="truncate">{ll(l)}</span>
+                style={page === l.id ? { background: 'var(--btn-bg)', color: 'var(--btn-text)', fontWeight: 600 } : locked ? { color: 'var(--sidebar-muted)', opacity: 0.8 } : { color: 'var(--sidebar-text)' }}>
+                <Icon size={16} className="shrink-0" /><span className="truncate flex-1">{ll(l)}</span>
+                {locked && <Lock size={13} className="shrink-0" aria-label="Restricted" />}
               </button>) })}
           </div>)
         })}
@@ -220,7 +236,7 @@ function Topbar({ page, go, roles }: any) {
   const results = useMemo(() => {
     if (!q.trim()) return []
     const needle = q.trim().toLowerCase()
-    return NAV.flatMap((g) => g.leaves.filter((l) => canSee(l, roles)).map((l) => ({ leaf: l, group: g })))
+    return NAV.flatMap((g) => g.leaves.filter((l) => canList(l, roles, g.id)).map((l) => ({ leaf: l, group: g })))
       .filter(({ leaf, group }) => leaf.label.toLowerCase().includes(needle) || (leaf.labelAm ?? '').includes(q.trim()) || group.label.toLowerCase().includes(needle))
       .slice(0, 8)
   }, [q, roles])
@@ -302,7 +318,9 @@ export default function App() {
   const roles: string[] = user.role_codes ?? []
   const requestedLeaf = LEAF_BY_ID[page]
   const accessDenied = !!requestedLeaf && !canSee(requestedLeaf, roles)
-  const leaf = requestedLeaf && !accessDenied ? requestedLeaf : LEAF_BY_ID['dashboard']
+  // Keep the requested leaf for header/breadcrumb/highlight even when denied —
+  // the denied view below renders instead of silently falling back to Dashboard.
+  const leaf = requestedLeaf ?? LEAF_BY_ID['dashboard']
   const Active = pageComponent(leaf)
   return (<ToastCtx.Provider value={toast}>
     <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
@@ -331,8 +349,8 @@ export default function App() {
                 <div className="text-4xl mb-3" aria-hidden>🔒</div>
                 <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>{t('Access restricted', 'መዳረሻ የተገደበ')}</h2>
                 <p className="text-sm mt-2" style={{ color: 'var(--muted)' }}>
-                  {t(`Your role does not include the “${requestedLeaf.label}” module. The sidebar shows only the modules your role is authorized for — if you need access, ask your system administrator.`,
-                     `የእርስዎ ሚና “${requestedLeaf.labelAm ?? requestedLeaf.label}” ሞዱልን አያካትትም። የጎን አሞሌ የሚናዎ ፈቃድ ያላቸውን ሞዱሎች ብቻ ያሳያል — መዳረሻ ከፈልጉ የሲስተም አስተዳዳሪዎን ይጠይቁ።`)}
+                  {t(`Your account does not have one of the required roles for “${requestedLeaf.label}”: ${(requestedLeaf.roles ?? []).join(', ') || 'all authenticated users'}. The HR submodules are listed for everyone, but their data is role-protected — if you need access, ask your system administrator to assign one of those roles.`,
+                     `መለያዎ ለ“${requestedLeaf.labelAm ?? requestedLeaf.label}” ከሚያስፈልጉ ሚናዎች አንዱን የለውም፦ ${(requestedLeaf.roles ?? []).join(', ') || 'ሁሉም የተረጋገጡ ተጠቃሚዎች'}። የሰው ሀብት ንዑስ ሞዱሎች ለሁሉም ይታያሉ፣ ነገር ግን መረጃቸው በሚና የተጠበቀ ነው — መዳረሻ ከፈልጉ የሲስተም አስተዳዳሪዎን ከእነዚህ ሚናዎች አንዱን እንዲሰጥዎት ይጠይቁ።`)}
                 </p>
                 <button className="btn mt-4" onClick={() => go('dashboard')}>{t('Go to Dashboard', 'ወደ ዳሽቦርድ ሂድ')}</button>
               </div>
